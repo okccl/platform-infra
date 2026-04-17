@@ -83,9 +83,21 @@ if ! grep -q "direnv hook" "$BASHRC"; then
   success "Added direnv to .bashrc"
 fi
 
-if ! grep -q "^cd ~" "$BASHRC"; then
-  echo 'cd ~' >> "$BASHRC"
+if ! grep -q "BASH_SOURCED" "$BASHRC"; then
+  echo '[ -z "$BASH_SOURCED" ] && export BASH_SOURCED=1 && cd ~' >> "$BASHRC"
   success "Added default cd to .bashrc"
+fi
+
+# -----------------------------------------------
+# 6. mise trust
+# -----------------------------------------------
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+
+if mise trust "$REPO_ROOT" &>/dev/null; then
+  success "mise trust applied"
+else
+  skip "mise trust already applied"
 fi
 
 # -----------------------------------------------
@@ -94,5 +106,6 @@ fi
 echo ""
 echo "Bootstrap complete. Next steps:"
 echo "  1. source ~/.bashrc"
-echo "  2. make init"
-echo "  3. make check"
+echo "  2. cd ~/platform-infra"
+echo "  3. make init"
+echo "  4. make check"
