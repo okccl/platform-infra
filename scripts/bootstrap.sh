@@ -105,6 +105,11 @@ fi
 # -----------------------------------------------
 echo ""
 echo "Bootstrap complete. Next steps:"
+echo ""
+echo "  0. Set git identity (if not yet configured):"
+echo '     git config --global user.email "your@email.com"'
+echo '     git config --global user.name "Your Name"'
+echo ""
 echo "  1. source ~/.bashrc"
 echo "  2. cd ~/platform-infra"
 echo "  3. make init"
