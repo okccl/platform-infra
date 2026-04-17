@@ -1,9 +1,12 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help init check
+.PHONY: help bootstrap init check
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-10s\033[0m %s\n", $$1, $$2}'
+
+bootstrap: ## Set up WSL from scratch (Homebrew, mise, Docker, direnv)
+	@bash scripts/bootstrap.sh
 
 init: ## Install all tools via mise
 	mise install
