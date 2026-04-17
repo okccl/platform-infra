@@ -1,0 +1,5 @@
+[tools]
+kubectl = "1.35.3"
+helm    = "3.20.1"
+k3d     = "5.8.3"
+argocd  = "3.2.9"
