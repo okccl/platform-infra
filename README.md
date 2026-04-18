@@ -60,3 +60,39 @@ make -C k3d cluster-delete
 ### 設計上の決定事項
 - ポート80/443はPhase 3（Ingress導入）に備え、ロードバランサーノードにマッピング済み。
 - クラスタ作成時にkubeconfigへの自動マージとコンテキストの切り替えを行う。
+
+### 設計上の決定事項（追記）
+- Traefik を無効化（`--disable=traefik`）。ポート80/443を ingress-nginx に明け渡すため。
+
+## Phase 3: Connectivity
+
+### このPhaseで解決すること
+Ingress-nginx と cert-manager を導入し、`*.localhost` で即座にサービスを公開できる基盤を構築する。
+自己署名CA証明書によりHTTPS通信を実現する。
+
+### 使い方
+```bash
+# クラスタ再作成後の復旧手順
+helm repo add argocd https://argoproj.github.io/argo-helm
+helm repo update
+helm install argocd argocd/argo-cd \
+  -n argocd --create-namespace \
+  -f ~/platform-gitops/platform/argocd/values.yaml \
+  --wait
+
+kubectl apply -f ~/platform-gitops/bootstrap/root.yaml
+kubectl apply -f ~/platform-gitops/bootstrap/apps-root.yaml
+
+argocd login localhost:8080 \
+  --username admin \
+  --password $(argocd admin initial-password -n argocd | head -1) \
+  --insecure
+
+argocd repo add git@github.com:okccl/platform-gitops.git \
+  --ssh-private-key-path ~/.ssh/id_ed25519
+
+argocd app sync root --server-side --async
+argocd app sync ingress-nginx --async
+argocd app sync external-secrets --server-side --async
+argocd app sync root --server-side --async
+```
