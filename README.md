@@ -37,7 +37,7 @@ make check
 エンジニアは1コマンドで同一の開発クラスタを作成・破棄・再作成できる。
 
 ### 使い方
-\`\`\`bash
+```bash
 # クラスタを作成
 make -C k3d cluster-create
 
@@ -46,7 +46,7 @@ make -C k3d cluster-status
 
 # クラスタを破棄
 make -C k3d cluster-delete
-\`\`\`
+```
 
 ### クラスタ構成（`k3d/cluster.yaml`）
 | 項目 | 値 |
