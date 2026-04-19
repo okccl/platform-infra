@@ -4,11 +4,8 @@ GITOPS_REPO     := git@github.com:okccl/platform-gitops.git
 CHARTS_REPO     := git@github.com:okccl/platform-charts.git
 SSH_KEY         := ~/.ssh/id_ed25519
 ARGOCD_NS       := argocd
-GITHUB_USER     := ccl
-GITHUB_EMAIL    := cclima12@gmail.com
-
-# GITHUB_PAT は環境変数で渡す（例: make bootstrap GITHUB_PAT=xxx）
-GITHUB_PAT      ?=
+SECRETS_DIR     := ~/platform-gitops/secrets/encrypted
+SOPS_AGE_KEY    := ~/.config/sops/age/keys.txt
 
 .PHONY: cluster-create cluster-delete cluster-status bootstrap bootstrap-argocd bootstrap-sync
 
@@ -28,7 +25,9 @@ bootstrap: cluster-create bootstrap-argocd bootstrap-sync
 
 # ArgoCDインストール・Root App適用
 bootstrap-argocd:
-	@if [ -z "$(GITHUB_PAT)" ]; then echo "エラー: GITHUB_PAT が未設定です。make bootstrap GITHUB_PAT=xxx で渡してください。"; exit 1; fi
+	@if [ ! -f "$(SOPS_AGE_KEY)" ]; then \
+		echo "エラー: Age秘密鍵が見つかりません: $(SOPS_AGE_KEY)"; exit 1; \
+	fi
 	# ArgoCDインストール
 	helm repo add argocd https://argoproj.github.io/argo-helm
 	helm repo update
@@ -37,13 +36,9 @@ bootstrap-argocd:
 		--create-namespace \
 		-f ~/platform-gitops/platform/argocd/values.yaml \
 		--wait
-	# ghcr-pat投入（既存の場合は上書き）
-	kubectl create secret generic ghcr-pat \
-		--from-literal=username=$(GITHUB_USER) \
-		--from-literal=password=$(GITHUB_PAT) \
-		--from-literal=email=$(GITHUB_EMAIL) \
-		-n $(ARGOCD_NS) \
-		--dry-run=client -o yaml | kubectl apply -f -
+	# ghcr-pat をSOPSで復号して投入
+	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/ghcr-pat.yaml \
+		| kubectl apply -f -
 	# Root App適用
 	kubectl apply -f ~/platform-gitops/bootstrap/root.yaml
 	kubectl apply -f ~/platform-gitops/bootstrap/apps-root.yaml
@@ -104,17 +99,13 @@ bootstrap-sync:
 	# minio namespaceが作成されるまで待機してからSecret投入
 	kubectl wait --for=jsonpath='{.status.phase}'=Active \
 		namespace/minio --timeout=300s
-	kubectl create secret generic minio-auth \
-		--from-literal=rootUser=minioadmin \
-		--from-literal=rootPassword=minioadmin123 \
-		-n minio \
-		--dry-run=client -o yaml | kubectl apply -f -
+	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/minio-auth.yaml \
+		| kubectl apply -f -
 	# sample-app namespaceが作成されるまで待機してからSecret投入
 	kubectl wait --for=jsonpath='{.status.phase}'=Active \
 		namespace/sample-app --timeout=300s
-	kubectl create secret generic minio-backup-secret \
-		-n sample-app \
-		--from-literal=ACCESS_KEY_ID=minioadmin \
-		--from-literal=ACCESS_SECRET_KEY=minioadmin123 \
-		--dry-run=client -o yaml | kubectl apply -f -
+	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/minio-backup-secret.yaml \
+		| kubectl apply -f -
+	# goldilocks用namespaceラベル付与
+	kubectl label namespace sample-app goldilocks.fairwinds.com/enabled=true --overwrite
 	@echo "bootstrap-sync 完了。'argocd app list' で状態を確認してください。"
