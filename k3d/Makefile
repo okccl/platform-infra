@@ -46,76 +46,40 @@ bootstrap-argocd:
 	kubectl wait --for=condition=available deployment/argocd-server \
 		-n $(ARGOCD_NS) --timeout=120s
 
-# コンポーネントの段階的sync（CRDの依存順序に従う）
 bootstrap-sync:
-	# port-forward起動（8080を使用中のプロセスがあれば先に終了）
+	# port-forward起動
 	lsof -ti:8080 | xargs kill -9 2>/dev/null || true
 	sleep 2
 	kubectl port-forward svc/argocd-server -n $(ARGOCD_NS) 8080:80 &
 	sleep 5
-	# ArgoCD CLIログイン（コンテキスト名を明示して上書き）
+	# ArgoCD CLIログイン
 	@ARGOCD_PASS=$$(argocd admin initial-password -n $(ARGOCD_NS) | head -1) && \
 	argocd login localhost:8080 \
 		--username admin \
 		--password $$ARGOCD_PASS \
 		--plaintext \
 		--name localhost
-	argocd context localhost
 	# SSHエージェント起動・鍵登録
 	eval $$(ssh-agent -s) && ssh-add $(SSH_KEY)
-	# リポジトリ登録（既存の場合はスキップ）
+	# リポジトリ登録
 	argocd repo add $(GITOPS_REPO) --ssh-private-key-path $(SSH_KEY) 2>/dev/null || true
 	argocd repo add $(CHARTS_REPO) --ssh-private-key-path $(SSH_KEY) 2>/dev/null || true
-	# root appをrefreshして子Applicationが作成されるまで待機
+	# root appのsyncを開始（sync-waveで順序制御）
 	argocd app get root --refresh > /dev/null
-	@for i in $$(seq 1 24); do \
-		COUNT=$$(kubectl get application -n argocd 2>/dev/null | grep -c "cert-manager") ; \
-		if [ "$$COUNT" -gt 0 ]; then echo "子Application確認完了"; break; fi; \
-		echo "子Application待機 $$i/24 (5秒後)..."; sleep 5; \
-	done
-	# port-forwardを再起動（長時間待機後に切れる場合があるため）
-	lsof -ti:8080 | xargs kill -9 2>/dev/null || true
-	sleep 2
-	kubectl port-forward svc/argocd-server -n $(ARGOCD_NS) 8080:80 &
-	sleep 5
-	# cert-manager（CRD基盤）
-	argocd app sync cert-manager --async
-	kubectl wait --for=condition=established \
-		crd/clusterissuers.cert-manager.io --timeout=180s
-	# ingress-nginx
-	argocd app sync ingress-nginx --async
+	argocd app sync root --server-side --async || true
+	# ingress-nginxの起動を待機（wave1,2が完了した証拠）
 	kubectl wait --for=condition=available deployment/ingress-nginx-controller \
-		-n ingress-nginx --timeout=300s
-	# external-secrets（CRD基盤）
-	argocd app sync external-secrets --server-side --async
-	kubectl wait --for=condition=established \
-		crd/clustersecretstores.external-secrets.io --timeout=180s
-	# webhookの起動を待機（ClusterExternalSecretの処理に必要）
-	kubectl wait --for=condition=available deployment/external-secrets-webhook \
-		-n external-secrets --timeout=180s
-	# kyverno（CRD基盤）
-	argocd app sync kyverno --async
-	kubectl wait --for=condition=established \
-		crd/clusterpolicies.kyverno.io --timeout=180s
-	# 残りのコンポーネントを個別sync
-	argocd app sync kyverno-policies --async
-	argocd app sync cnpg --async
-	argocd app sync kube-prometheus-stack --async
-	argocd app sync loki --async
-	argocd app sync alloy --async
-	argocd app sync tempo --async
-	argocd app sync minio --async
-	argocd app sync apps-root --server-side --async
-	# minio namespaceが作成されるまで待機してからSecret投入
+		-n ingress-nginx --timeout=600s
+	# minio Secret投入
 	kubectl wait --for=jsonpath='{.status.phase}'=Active \
 		namespace/minio --timeout=300s
 	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/minio-auth.yaml \
 		| kubectl apply -f -
-	# sample-app namespaceが作成されるまで待機してからSecret投入
+	# sample-app Secret投入
 	kubectl wait --for=jsonpath='{.status.phase}'=Active \
 		namespace/sample-app --timeout=300s
 	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/minio-backup-secret.yaml \
 		| kubectl apply -f -
-	# goldilocks用namespaceラベル付与
+	# goldilocks用ラベル付与
 	kubectl label namespace sample-app goldilocks.fairwinds.com/enabled=true --overwrite
-	@echo "bootstrap-sync 完了。'argocd app list' で状態を確認してください。"
+	@echo "bootstrap完了。残りは自動syncで適用されます。argocd app list で確認してください。"
