@@ -66,13 +66,18 @@ bootstrap-sync:
 	# リポジトリ登録（既存の場合はスキップ）
 	argocd repo add $(GITOPS_REPO) --ssh-private-key-path $(SSH_KEY) 2>/dev/null || true
 	argocd repo add $(CHARTS_REPO) --ssh-private-key-path $(SSH_KEY) 2>/dev/null || true
-	# root appをrefreshして自動syncを起動し、Namespace/Application適用を待機
+	# root appをrefreshして子Applicationが作成されるまで待機
 	argocd app get root --refresh > /dev/null
 	@for i in $$(seq 1 24); do \
-		STATUS=$$(argocd app get root 2>/dev/null | grep "Sync Status:" | grep "Synced") ; \
-		if [ -n "$$STATUS" ]; then echo "root app Synced確認"; break; fi; \
-		echo "root app sync待機 $$i/24 (5秒後)..."; sleep 5; \
+		COUNT=$$(kubectl get application -n argocd 2>/dev/null | grep -c "cert-manager") ; \
+		if [ "$$COUNT" -gt 0 ]; then echo "子Application確認完了"; break; fi; \
+		echo "子Application待機 $$i/24 (5秒後)..."; sleep 5; \
 	done
+	# port-forwardを再起動（長時間待機後に切れる場合があるため）
+	lsof -ti:8080 | xargs kill -9 2>/dev/null || true
+	sleep 2
+	kubectl port-forward svc/argocd-server -n $(ARGOCD_NS) 8080:80 &
+	sleep 5
 	# cert-manager（CRD基盤）
 	argocd app sync cert-manager --async
 	kubectl wait --for=condition=established \
