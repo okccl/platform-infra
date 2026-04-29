@@ -71,11 +71,6 @@ bootstrap-sync:
 	@until kubectl get deployment ingress-nginx-controller -n ingress-nginx 2>/dev/null; do echo "ingress-nginx待機..."; sleep 5; done
 	kubectl wait --for=condition=available deployment/ingress-nginx-controller \
 		-n ingress-nginx --timeout=600s
-	# minio Secret投入
-	kubectl wait --for=jsonpath='{.status.phase}'=Active \
-		namespace/minio --timeout=300s
-	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/minio-auth.yaml \
-		| kubectl apply -f -
 	# sample-app Secret投入
 	kubectl wait --for=jsonpath='{.status.phase}'=Active \
 		namespace/sample-app --timeout=300s
