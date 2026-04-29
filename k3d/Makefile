@@ -61,6 +61,8 @@ bootstrap-sync:
 		--plaintext \
 		--name localhost
 	argocd context localhost
+	# SSHエージェント起動・鍵登録
+	eval $$(ssh-agent -s) && ssh-add $(SSH_KEY)
 	# リポジトリ登録（既存の場合はスキップ）
 	argocd repo add $(GITOPS_REPO) --ssh-private-key-path $(SSH_KEY) 2>/dev/null || true
 	argocd repo add $(CHARTS_REPO) --ssh-private-key-path $(SSH_KEY) 2>/dev/null || true
