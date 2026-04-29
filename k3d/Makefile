@@ -69,11 +69,15 @@ bootstrap-sync:
 	# Root AppからNamespaceと子Applicationのみ先にsync（CRD未存在エラーを回避）
 	# root appのリソース検出を待機してからsync（最大60秒リトライ）
 	@for i in $$(seq 1 12); do \
-		argocd app sync root --server-side \
-			--resource :Namespace:* \
-			--resource argoproj.io:Application:* && break; \
-		echo "リトライ $$i/12 (5秒後)..."; sleep 5; \
+		RESOURCE_COUNT=$$(argocd app get root 2>/dev/null | grep -c "Namespace\|Application") ; \
+		if [ "$$RESOURCE_COUNT" -gt 0 ]; then \
+			echo "リソース検出完了（$$RESOURCE_COUNT件）"; break; \
+		fi; \
+		echo "リソース検出待機 $$i/12 (5秒後)..."; sleep 5; \
 	done
+	argocd app sync root --server-side \
+		--resource :Namespace:* \
+		--resource argoproj.io:Application:*
 	# cert-manager（CRD基盤）
 	argocd app sync cert-manager --async
 	kubectl wait --for=condition=established \
