@@ -67,9 +67,13 @@ bootstrap-sync:
 	argocd repo add $(GITOPS_REPO) --ssh-private-key-path $(SSH_KEY) 2>/dev/null || true
 	argocd repo add $(CHARTS_REPO) --ssh-private-key-path $(SSH_KEY) 2>/dev/null || true
 	# Root AppからNamespaceと子Applicationのみ先にsync（CRD未存在エラーを回避）
-	argocd app sync root --server-side \
-		--resource :Namespace:* \
-		--resource argoproj.io:Application:*
+	# root appのリソース検出を待機してからsync（最大60秒リトライ）
+	@for i in $$(seq 1 12); do \
+		argocd app sync root --server-side \
+			--resource :Namespace:* \
+			--resource argoproj.io:Application:* && break; \
+		echo "リトライ $$i/12 (5秒後)..."; sleep 5; \
+	done
 	# cert-manager（CRD基盤）
 	argocd app sync cert-manager --async
 	kubectl wait --for=condition=established \
