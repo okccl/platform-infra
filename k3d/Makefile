@@ -68,6 +68,7 @@ bootstrap-sync:
 	argocd app get root --refresh > /dev/null
 	argocd app sync root --server-side --async || true
 	# ingress-nginxの起動を待機（wave1,2が完了した証拠）
+	@until kubectl get deployment ingress-nginx-controller -n ingress-nginx 2>/dev/null; do echo "ingress-nginx待機..."; sleep 5; done
 	kubectl wait --for=condition=available deployment/ingress-nginx-controller \
 		-n ingress-nginx --timeout=600s
 	# minio Secret投入
