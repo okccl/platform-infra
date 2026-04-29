@@ -5,7 +5,7 @@ CHARTS_REPO     := git@github.com:okccl/platform-charts.git
 SSH_KEY         := ~/.ssh/id_ed25519
 ARGOCD_NS       := argocd
 SECRETS_DIR     := ~/platform-gitops/secrets/encrypted
-SOPS_AGE_KEY    := ~/.config/sops/age/keys.txt
+SOPS_AGE_KEY    := $(HOME)/.config/sops/age/keys.txt
 
 .PHONY: cluster-create cluster-delete cluster-status bootstrap bootstrap-argocd bootstrap-sync
 
