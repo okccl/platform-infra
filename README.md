@@ -56,15 +56,13 @@ make -C k3d cluster-delete
 |---|---|
 | クラスタ名 | dev |
 | コントロールプレーンノード数 | 1 |
-| エージェントノード数 | 2 |
+| エージェントノード数 | 3 |
 | HTTPポート | 80 |
 | HTTPSポート | 443 |
 
 ### 設計上の決定事項
 - ポート80/443はPhase 3（Ingress導入）に備え、ロードバランサーノードにマッピング済み。
 - クラスタ作成時にkubeconfigへの自動マージとコンテキストの切り替えを行う。
-
-### 設計上の決定事項（追記）
 - Traefik を無効化（`--disable=traefik`）。ポート80/443を ingress-nginx に明け渡すため。
 
 ---
@@ -74,33 +72,6 @@ make -C k3d cluster-delete
 ### このPhaseで解決すること
 Ingress-nginx と cert-manager を導入し、`*.localhost` で即座にサービスを公開できる基盤を構築する。
 自己署名CA証明書によりHTTPS通信を実現する。
-
-### 使い方
-```bash
-# クラスタ再作成後の復旧手順
-helm repo add argocd https://argoproj.github.io/argo-helm
-helm repo update
-helm install argocd argocd/argo-cd \
-  -n argocd --create-namespace \
-  -f ~/platform-gitops/platform/argocd/values.yaml \
-  --wait
-
-kubectl apply -f ~/platform-gitops/bootstrap/root.yaml
-kubectl apply -f ~/platform-gitops/bootstrap/apps-root.yaml
-
-argocd login localhost:8080 \
-  --username admin \
-  --password $(argocd admin initial-password -n argocd | head -1) \
-  --insecure
-
-argocd repo add git@github.com:okccl/platform-gitops.git \
-  --ssh-private-key-path ~/.ssh/id_ed25519
-
-argocd app sync root --server-side --async
-argocd app sync ingress-nginx --async
-argocd app sync external-secrets --server-side --async
-argocd app sync root --server-side --async
-```
 
 ---
 
@@ -142,26 +113,104 @@ kubectl uncordon <node-name>
 ## Phase 10: Disaster Recovery (DR)
 
 ### このPhaseで解決すること
-クラスタを完全に破壊した状態から `make init` の1コマンドで復旧できることを示す。
-RTO（目標復旧時間）を計測し、README に記録する。
+クラスタを完全に破壊した状態から `make bootstrap` の1コマンドで完全自動復旧できることを実証する。
+RTOを実測し、バックアップ/リストアまで含めたDR手順を確立する。
 
 ### DR手順（クラスタ全損からの復旧）
 
 ```bash
-# 1. クラスタ再作成
-make -C k3d cluster-create
+# 1. Ageキーが存在することを確認（別マシンの場合はコピーが必要）
+ls ~/.config/sops/age/keys.txt
 
-# 2. ArgoCD 起動 & GitOps 再接続（Phase 3 の手順に従う）
-#    → platform-gitops の全コンポーネントが自動復旧
+# 2. 外部MinIOが起動していることを確認
+docker ps | grep minio-external
 
-# 3. MinIO からの DB リストア（バックアップ有効時）
-#    → CNPG の Cluster マニフェストに bootstrap.recovery を設定して apply
+# 3. bootstrap実行（これだけで完全復旧）
+cd k3d
+make bootstrap
+```
+
+### RTO計測結果
+
+| 指標 | 時間 |
+|---|---|
+| RTO① `make bootstrap` 完了 | **7分37秒** |
+| RTO② 全App Synced/Healthy | **15分24秒** |
+| 手動作業 | 新規マシンの場合のAgeキーコピーのみ |
+
+### 外部MinIOによるDR基盤
+
+クラスタ内にMinIOを立てていたが、クラスタ全損の想定ではバックアップとして機能しないため、
+WSL上のDockerコンテナとして外部MinIOを構築し移行した。
+なお、今後のクラウド展開のPhaseでクラウドへのバックアップも検討する。
+
+```bash
+# 外部MinIO起動（--restart unless-stopped でWSL再起動後も自動復旧）
+docker run -d \
+  --name minio-external \
+  --restart unless-stopped \
+  -p 9000:9000 -p 9001:9001 \
+  -v ~/minio-data:/data \
+  -e MINIO_ROOT_USER=minioadmin \
+  -e MINIO_ROOT_PASSWORD=minioadmin123 \
+  quay.io/minio/minio:latest \
+  server /data --console-address ":9001"
+```
+
+### DBリストア手順（CNPGのrecovery）
+
+```bash
+# ArgoCD自動syncを止めてからrecoveryクラスタを作成
+kubectl scale statefulset argocd-application-controller -n argocd --replicas=0
+
+kubectl apply -f - <<EOF
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: sample-backend-db
+  namespace: sample-app
+spec:
+  instances: 2
+  imageName: ghcr.io/cloudnative-pg/postgresql:17
+  bootstrap:
+    recovery:
+      source: sample-backend-db
+  externalClusters:
+    - name: sample-backend-db
+      barmanObjectStore:
+        endpointURL: "http://host.k3d.internal:9000"
+        destinationPath: "s3://cnpg-backup/sample-backend-db"
+        s3Credentials:
+          accessKeyId:
+            name: minio-backup-secret
+            key: ACCESS_KEY_ID
+          secretAccessKey:
+            name: minio-backup-secret
+            key: ACCESS_SECRET_KEY
+        wal:
+          compression: gzip
+        data:
+          compression: gzip
+  storage:
+    size: 1Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+EOF
+
+# 復旧確認後にArgoCD再起動
+kubectl scale statefulset argocd-application-controller -n argocd --replicas=1
 ```
 
 ### 設計上の決定事項
-- クラスタ状態はすべて Git（platform-gitops）に記録されており、再 apply で復元できる。
-- Secrets は SOPS × Age で暗号化管理（Phase 10）。復旧時に平文の Secret をローカルに持つ必要がない。
-- DB バックアップは MinIO（Phase 8）に S3互換形式で保存。CNPG の Point-in-Time Recovery に対応。
+- SecretsはSOPS × Age で暗号化管理。復旧時に必要なのはAgeキー1ファイルのみ。
+- クラスタ内MinIOを廃止し、WSL上の外部Dockerコンテナに移行。クラスタ消去の影響を受けない。
+- ArgoCD sync-waveを導入し、CRD依存の順序制御を構造的に実装。bootstrap完全自動化を実現。
+- KyvernoのPodポリシー（resources.limits必須）がCNPG recoveryをブロックする。recoveryマニフェストにresourcesを明示する必要がある。
 
 ---
 
@@ -189,3 +238,4 @@ terraform apply
 ### 設計上の決定事項
 - ローカルの ingress-nginx から Gateway API（Envoy Gateway）へ移行予定。
 - EKS 上でも同じ `platform-gitops` の bootstrap 手順で全コンポーネントを展開できることを目標とする。
+- DBバックアップ先をAWS S3に移行することで、真のクラウドDRを実現予定。
