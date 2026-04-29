@@ -83,4 +83,8 @@ bootstrap-sync:
 		| kubectl apply -f -
 	# goldilocks用ラベル付与
 	kubectl label namespace sample-app goldilocks.fairwinds.com/enabled=true --overwrite
-	@echo "bootstrap完了。残りは自動syncで適用されます。argocd app list で確認してください。"
+	@echo ""
+	@echo "=== bootstrap完了 ==="
+	@echo "ArgoCD URL: https://argocd.localhost"
+	@echo "ArgoCD 初期パスワード: $$(argocd admin initial-password -n $(ARGOCD_NS) | head -1)"
+	@echo "残りのAppは自動syncで適用されます。argocd app list で確認してください。"
