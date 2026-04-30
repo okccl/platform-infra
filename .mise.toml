@@ -5,3 +5,4 @@ k3d     = "5.8.3"
 argocd  = "3.2.9"
 sops    = "3.12.2"
 age     = "1.3.1"
+"ubi:argoproj/argo-rollouts" = { version = "1.8.3", exe = "kubectl-argo-rollouts" }
