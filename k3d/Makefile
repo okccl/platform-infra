@@ -67,10 +67,10 @@ bootstrap-sync:
 	# root appのsyncを開始（sync-waveで順序制御）
 	argocd app get root --refresh > /dev/null
 	argocd app sync root --server-side --async || true
-	# ingress-nginxの起動を待機（wave1,2が完了した証拠）
-	@until kubectl get deployment ingress-nginx-controller -n ingress-nginx 2>/dev/null; do echo "ingress-nginx待機..."; sleep 5; done
-	kubectl wait --for=condition=available deployment/ingress-nginx-controller \
-		-n ingress-nginx --timeout=600s
+	# envoy-gatewayの起動を待機（wave1,2が完了した証拠）
+	@until kubectl get deployment envoy-gateway -n envoy-gateway-system 2>/dev/null; do echo "envoy-gateway待機..."; sleep 5; done
+	kubectl wait --for=condition=available deployment/envoy-gateway \
+		-n envoy-gateway-system --timeout=600s
 	# sample-app Secret投入
 	kubectl wait --for=jsonpath='{.status.phase}'=Active \
 		namespace/sample-app --timeout=300s
@@ -80,6 +80,6 @@ bootstrap-sync:
 	kubectl label namespace sample-app goldilocks.fairwinds.com/enabled=true --overwrite
 	@echo ""
 	@echo "=== bootstrap完了 ==="
-	@echo "ArgoCD URL: https://argocd.localhost"
+	@echo "ArgoCD URL: http://argocd.localhost"
 	@echo "ArgoCD 初期パスワード: $$(argocd admin initial-password -n $(ARGOCD_NS) | head -1)"
 	@echo "残りのAppは自動syncで適用されます。argocd app list で確認してください。"
