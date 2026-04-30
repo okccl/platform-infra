@@ -71,6 +71,10 @@ bootstrap-sync:
 	@until kubectl get deployment envoy-gateway -n envoy-gateway-system 2>/dev/null; do echo "envoy-gateway待機..."; sleep 5; done
 	kubectl wait --for=condition=available deployment/envoy-gateway \
 		-n envoy-gateway-system --timeout=600s
+	# envoy proxyデータプレーンの起動を待機（これが完了するとArgoCD GUIにアクセス可能）
+	kubectl wait --for=condition=ready pod \
+		-l gateway.envoyproxy.io/owning-gateway-name=eg \
+		-n envoy-gateway-system --timeout=120s
 	# sample-app Secret投入
 	kubectl wait --for=jsonpath='{.status.phase}'=Active \
 		namespace/sample-app --timeout=300s
