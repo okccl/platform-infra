@@ -18,12 +18,16 @@ make check
 ```
 
 ### miseで管理するツール
-| ツール | バージョン |
-|---------|---------|
-| kubectl | 1.35.3 |
-| helm | 3.20.1 |
-| k3d | 5.8.3 |
-| argocd | 3.2.9 |
+| ツール | バージョン | 用途 |
+|---------|---------|------|
+| kubectl | 1.35.3 | Kubernetes クラスタ操作 |
+| helm | 3.20.1 | Helm Chart 管理 |
+| k3d | 5.8.3 | ローカル k3d クラスタ管理 |
+| argocd | 3.2.9 | ArgoCD CLI |
+| sops | 3.12.2 | Secret 暗号化・復号 |
+| age | 1.3.1 | SOPS 暗号化キー管理 |
+| kubectl-argo-rollouts | 1.8.3 | Argo Rollouts 操作（Phase 11-3） |
+| oha | 1.14.0 | HTTP 負荷テスト（Phase 11-4） |
 
 ### 前提条件
 - WSL2 (Ubuntu 24.04 LTS)
@@ -63,7 +67,7 @@ make -C k3d cluster-delete
 ### 設計上の決定事項
 - ポート80/443はPhase 3（Ingress導入）に備え、ロードバランサーノードにマッピング済み。
 - クラスタ作成時にkubeconfigへの自動マージとコンテキストの切り替えを行う。
-- Traefik を無効化（`--disable=traefik`）。ポート80/443を ingress-nginx に明け渡すため。
+- Traefik を無効化（`--disable=traefik`）。ポート80/443を ingress-nginx（後に Envoy Gateway）に明け渡すため。
 
 ---
 
@@ -142,7 +146,6 @@ make bootstrap
 
 クラスタ内にMinIOを立てていたが、クラスタ全損の想定ではバックアップとして機能しないため、
 WSL上のDockerコンテナとして外部MinIOを構築し移行した。
-なお、今後のクラウド展開のPhaseでクラウドへのバックアップも検討する。
 
 ```bash
 # 外部MinIO起動（--restart unless-stopped でWSL再起動後も自動復旧）
@@ -157,55 +160,6 @@ docker run -d \
   server /data --console-address ":9001"
 ```
 
-### DBリストア手順（CNPGのrecovery）
-
-```bash
-# ArgoCD自動syncを止めてからrecoveryクラスタを作成
-kubectl scale statefulset argocd-application-controller -n argocd --replicas=0
-
-kubectl apply -f - <<EOF
-apiVersion: postgresql.cnpg.io/v1
-kind: Cluster
-metadata:
-  name: sample-backend-db
-  namespace: sample-app
-spec:
-  instances: 2
-  imageName: ghcr.io/cloudnative-pg/postgresql:17
-  bootstrap:
-    recovery:
-      source: sample-backend-db
-  externalClusters:
-    - name: sample-backend-db
-      barmanObjectStore:
-        endpointURL: "http://host.k3d.internal:9000"
-        destinationPath: "s3://cnpg-backup/sample-backend-db"
-        s3Credentials:
-          accessKeyId:
-            name: minio-backup-secret
-            key: ACCESS_KEY_ID
-          secretAccessKey:
-            name: minio-backup-secret
-            key: ACCESS_SECRET_KEY
-        wal:
-          compression: gzip
-        data:
-          compression: gzip
-  storage:
-    size: 1Gi
-  resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
-EOF
-
-# 復旧確認後にArgoCD再起動
-kubectl scale statefulset argocd-application-controller -n argocd --replicas=1
-```
-
 ### 設計上の決定事項
 - SecretsはSOPS × Age で暗号化管理。復旧時に必要なのはAgeキー1ファイルのみ。
 - クラスタ内MinIOを廃止し、WSL上の外部Dockerコンテナに移行。クラスタ消去の影響を受けない。
@@ -214,28 +168,73 @@ kubectl scale statefulset argocd-application-controller -n argocd --replicas=1
 
 ---
 
-## Phase 11: Cloud Expansion（作業中）
+## Phase 11: Hardening & Exploration
 
 ### このPhaseで解決すること
-ローカル（k3d）で構築した基盤をそのままクラウドへ展開し、
-`terraform/` でコード化した EKS クラスタに同じ GitOps フローを適用する。
+セキュリティ・デプロイ戦略・オートスケール・ネットワーキングの各レイヤーを個別に強化する。
 
-### ディレクトリ構成
+### 完了済みステップ
+
+| ステップ | 内容 | バージョン |
+|---|---|---|
+| 11-1 | Gateway API（Envoy Gateway）導入・ingress-nginx 廃止 | v1.7.2 |
+| 11-2 | Trivy Operator 導入（脆弱性の継続スキャン） | 0.32.1 |
+| 11-3 | Argo Rollouts 導入（カナリアデプロイ） | 2.40.9 |
+| 11-4 | KEDA 導入（Prometheus メトリクスによるイベント駆動オートスケール） | 2.19.0 |
+
+### 残タスク
+
+| ステップ | 内容 |
+|---|---|
+| 11-5 | sample-backend DBリトライロジック |
+| 11-6 | Crossplane（provider-helm） |
+| 11-7 | Cilium（CNI置き換え） |
+| 11-8 | Local→Cloud 移行パス設計・ADR |
+
+### Phase 11-1: Gateway API（Envoy Gateway）
+
+ingress-nginx を廃止し、Envoy Gateway に移行。`helm template` でレンダリングした YAML を Git に格納する **Rendered Manifests Pattern** を採用。
 
 ```
-platform-infra/
-└── terraform/
-    └── eks/        # EKS クラスタ定義（作業中）
+Gateway エンドポイント: 172.19.0.2:80（LoadBalancer）
+ルーティング方式: HTTPRoute + ReferenceGrant（クロスNamespace）
 ```
 
-### 使い方（予定）
+### Phase 11-2: Trivy Operator
+
+全 Namespace のワークロードを継続的にスキャンし、脆弱性レポートを CRD として保存する。
+
 ```bash
-cd terraform/eks
-terraform init
-terraform apply
+# 脆弱性レポートの確認
+kubectl get vulnerabilityreports --all-namespaces
+```
+
+### Phase 11-3: Argo Rollouts
+
+sample-backend の Deployment をカナリア戦略の Rollout に移行。`common-app` Library Chart を v0.2.0 に更新し、`rollout.enabled` フラグで切り替え可能にした。
+
+```bash
+# Rollout の状態確認
+kubectl argo rollouts get rollout sample-backend -n sample-app --watch
+
+# カナリアの手動 promote
+kubectl argo rollouts promote sample-backend -n sample-app
+```
+
+### Phase 11-4: KEDA
+
+Prometheus の HTTP リクエスト数を元に sample-backend をスケールする ScaledObject を設定。`oha` による負荷テストで 1 → 5 レプリカへのスケールアウトと、負荷終了後のスケールインを確認した。
+
+```bash
+# ScaledObject の状態確認
+kubectl get scaledobject -n sample-app
+
+# 負荷テスト
+oha -z 60s -c 50 --host sample-backend.localhost http://172.19.0.2/health
 ```
 
 ### 設計上の決定事項
-- ローカルの ingress-nginx から Gateway API（Envoy Gateway）へ移行予定。
-- EKS 上でも同じ `platform-gitops` の bootstrap 手順で全コンポーネントを展開できることを目標とする。
-- DBバックアップ先をAWS S3に移行することで、真のクラウドDRを実現予定。
+- Rendered Manifests Pattern により、外部レジストリ障害時でも Git から DR 再構築が可能。Phase 10 の DR 方針と整合している。
+- `common-app` Service に `name: http` ポート名を付与（v0.3.0）することで、ServiceMonitor による Prometheus scrape が正しく機能するようになった。
+- KEDA は HPA を自動生成するため、`common-app` の `hpa.enabled` と併用しない。
+- Argo Rollouts と KEDA を組み合わせることで、「段階的デプロイ」と「負荷ベースのオートスケール」を同一ワークロードで実現。
