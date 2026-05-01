@@ -22,8 +22,8 @@ cluster-delete:
 cluster-status:
 	kubectl get nodes -o wide
 
-# クラスタ再作成からsyncまでを一括実行
-bootstrap: cluster-create fix-coredns install-cilium bootstrap-argocd bootstrap-sync
+# Cilium を先にインストールしてから CoreDNS を設定する
+bootstrap: cluster-create install-cilium fix-coredns bootstrap-argocd bootstrap-sync
 
 # CoreDNS に host.k3d.internal を追加（MinIO 疎通に必要）
 fix-coredns:
