@@ -137,11 +137,13 @@ make bootstrap
 
 ### RTO計測結果
 
-| 指標 | 時間 |
-|---|---|
-| RTO① `make bootstrap` 完了 | **7分37秒** |
-| RTO② 全App Synced/Healthy | **15分24秒** |
-| 手動作業 | 新規マシンの場合のAgeキーコピーのみ |
+| 指標 | Phase 10 | Phase 11（Cilium 導入後） |
+|---|---|---|
+| RTO① `make bootstrap` 完了 | **7分37秒** | **約11分** |
+| RTO② 全App Synced/Healthy | **15分24秒** | **約20分** |
+| 手動作業 | 新規マシンの場合のAgeキーコピーのみ | 同左 |
+
+Cilium のインストールが bootstrap に加わったため所要時間が増加。ただし手動介入は引き続きゼロ。
 
 ### 外部MinIOによるDR基盤
 
@@ -183,14 +185,8 @@ docker run -d \
 | 11-3 | Argo Rollouts 導入（カナリアデプロイ） | 2.40.9 |
 | 11-4 | KEDA 導入（Prometheus メトリクスによるイベント駆動オートスケール） | 2.19.0 |
 | 11-5 | sample-backend DB リトライロジック・CoreDNS 修正 | - |
-
-### 残タスク
-
-| ステップ | 内容 |
-|---|---|
-| 11-6 | Crossplane（provider-helm） |
-| 11-7 | Cilium（CNI置き換え） |
-| 11-8 | Local→Cloud 移行パス設計・ADR |
+| 11-6 | Crossplane（provider-helm）導入 | 2.2.1 |
+| 11-7 | Cilium（CNI置き換え） | 1.19.3 |
 
 ### Phase 11-1: Gateway API（Envoy Gateway）
 
@@ -233,7 +229,6 @@ kubectl get scaledobject -n sample-app
 # 負荷テスト
 oha -z 60s -c 50 --host sample-backend.localhost http://172.19.0.2/health
 ```
-
 ### 設計上の決定事項
 - Rendered Manifests Pattern により、外部レジストリ障害時でも Git から DR 再構築が可能。Phase 10 の DR 方針と整合している。
 - `common-app` Service に `name: http` ポート名を付与（v0.3.0）することで、ServiceMonitor による Prometheus scrape が正しく機能するようになった。
@@ -270,3 +265,42 @@ kubectl delete pvc <旧primary-pvc> -n sample-app
 - `fix-coredns` は k3d ネットワークのゲートウェイ IP を動的に取得するため、クラスタを再作成してもIPが変わっても対応できる。
 - CoreDNS の NodeHosts は k3s が管理する ConfigMap のため ArgoCD で管理しない。bootstrap スクリプトに組み込む形で冪等性を担保した。
 - CNPG 旧 primary の WAL empty チェック失敗は既知の問題。PVC 削除 → 再クローンが dev 環境での標準 Runbook とする（詳細は platform-adr に記録予定）。
+
+### Phase 11-6: Crossplane（provider-helm）
+
+Crossplane v2.2.1 と provider-helm v1.0.4 を導入し、Helm Release を Kubernetes リソースとして GitOps 管理する構成を実証した。
+
+```
+Git（Release CR）→ ArgoCD sync → Crossplane 調整 → Helm release デプロイ
+```
+
+ArgoCD がプラットフォームコンポーネント・アプリの宣言を管理し、Crossplane が Helm release のライフサイクルを管理するという責務分離の構造をローカル環境で示した。Phase 13（EKS）では `provider-aws` を使い、RDS や VPC などのクラウドリソースを同じ構造で管理する。
+
+```bash
+# Crossplane が管理する Helm release の状態確認
+kubectl get release -A
+```
+
+### Phase 11-7: Cilium（CNI置き換え）
+
+k3s デフォルトの flannel を Cilium v1.19.3（eBPF CNI）に置き換えた。bootstrap の順序を `cluster-create → install-cilium → fix-coredns → bootstrap-argocd → bootstrap-sync` に変更し、CNI が存在しない状態で CoreDNS が起動しようとする問題を回避した。
+
+```bash
+# Cilium の状態確認
+kubectl get pods -n kube-system -l app.kubernetes.io/name=cilium
+```
+
+#### k3d ローカル環境での制約
+
+`kubeProxyReplacement=true`（kube-proxy 完全置き換え）は、k3d では起動順序の問題で CoreDNS が API サーバーに接続できなくなるため無効化している。ローカル環境では Cilium は CNI + NetworkPolicy の担当に留め、kube-proxy は k3s に任せる。クラウド環境（EKS/GKE）では `kubeProxyReplacement=true` を有効にすることで eBPF による kube-proxy 代替の恩恵を受けられる。
+
+#### 設計上の決定事項
+- flannel 無効化（`--flannel-backend=none`）と NetworkPolicy 無効化（`--disable-network-policy`）を `cluster.yaml` で宣言。
+- `k8sServiceHost/Port` は `kubeProxyReplacement=false` では不要。指定すると operator が接続できなくなるため除外。
+- Cilium は ArgoCD（wave 1）で GitOps 管理するが、bootstrap 時は ArgoCD より先に Helm で直接インストールする必要があるため `install-cilium` ターゲットで別途実行する。
+
+### 設計上の決定事項（Phase 11 全体）
+- Rendered Manifests Pattern により、外部レジストリ障害時でも Git から DR 再構築が可能。Phase 10 の DR 方針と整合している。
+- `common-app` Service に `name: http` ポート名を付与（v0.3.0）することで、ServiceMonitor による Prometheus scrape が正しく機能するようになった。
+- KEDA は HPA を自動生成するため、`common-app` の `hpa.enabled` と併用しない。
+- Argo Rollouts と KEDA を組み合わせることで、「段階的デプロイ」と「負荷ベースのオートスケール」を同一ワークロードで実現。
