@@ -28,7 +28,4 @@ options:
       - arg: --disable-network-policy
         nodeFilters:
           - server:*
-      # Cilium が独自の kube-proxy 代替実装を提供するため無効化
-      - arg: --disable-kube-proxy
-        nodeFilters:
-          - server:*
+      # kube-proxy は k3s に任せる（ローカル環境での安定性優先）

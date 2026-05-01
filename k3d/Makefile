@@ -42,13 +42,15 @@ fix-coredns:
 
 # Cilium を Helm で直接インストール（ArgoCD 起動前に CNI が必要なため）
 install-cilium:
+	$(eval API_SERVER_IP := $(shell kubectl get endpoints kubernetes \
+		-o jsonpath='{.subsets[0].addresses[0].ip}'))
 	helm repo add cilium https://helm.cilium.io/ 2>/dev/null || true
 	helm repo update cilium
 	helm upgrade --install cilium cilium/cilium \
 		--version $(CILIUM_VERSION) \
 		--namespace kube-system \
-		--set kubeProxyReplacement=true \
-		--set k8sServiceHost=0.0.0.0 \
+		--set kubeProxyReplacement=false \
+		--set k8sServiceHost=$(API_SERVER_IP) \
 		--set k8sServicePort=6443 \
 		--set hostServices.enabled=false \
 		--set externalIPs.enabled=true \
