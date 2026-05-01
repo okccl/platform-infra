@@ -82,7 +82,7 @@ bootstrap-argocd:
 	kubectl apply -f ~/platform-gitops/bootstrap/apps-root.yaml
 	# ArgoCD Server の起動を待機
 	kubectl wait --for=condition=available deployment/argocd-server \
-		-n $(ARGOCD_NS) --timeout=120s
+		-n $(ARGOCD_NS) --timeout=300s
 
 bootstrap-sync:
 	# port-forward起動
@@ -105,14 +105,13 @@ bootstrap-sync:
 	# root appのsyncを開始（sync-waveで順序制御）
 	argocd app get root --refresh > /dev/null
 	argocd app sync root --server-side --async || true
-	# envoy-gatewayの起動を待機（wave1,2が完了した証拠）
 	@until kubectl get deployment envoy-gateway -n envoy-gateway-system 2>/dev/null; do echo "envoy-gateway待機..."; sleep 5; done
 	kubectl wait --for=condition=available deployment/envoy-gateway \
 		-n envoy-gateway-system --timeout=600s
 	# envoy proxyデータプレーンの起動を待機（これが完了するとArgoCD GUIにアクセス可能）
 	kubectl wait --for=condition=ready pod \
 		-l gateway.envoyproxy.io/owning-gateway-name=eg \
-		-n envoy-gateway-system --timeout=120s
+		-n envoy-gateway-system --timeout=300s
 	# sample-app Secret投入
 	kubectl wait --for=jsonpath='{.status.phase}'=Active \
 		namespace/sample-app --timeout=300s
