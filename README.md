@@ -28,6 +28,7 @@ make check
 | age | 1.3.1 | SOPS 暗号化キー管理 |
 | kubectl-argo-rollouts | 1.8.3 | Argo Rollouts 操作（Phase 11-3） |
 | oha | 1.14.0 | HTTP 負荷テスト（Phase 11-4） |
+| gh | 2.87.2 | GitHub CLI（Phase 11-5） |
 
 ### 前提条件
 - WSL2 (Ubuntu 24.04 LTS)
@@ -181,12 +182,12 @@ docker run -d \
 | 11-2 | Trivy Operator 導入（脆弱性の継続スキャン） | 0.32.1 |
 | 11-3 | Argo Rollouts 導入（カナリアデプロイ） | 2.40.9 |
 | 11-4 | KEDA 導入（Prometheus メトリクスによるイベント駆動オートスケール） | 2.19.0 |
+| 11-5 | sample-backend DB リトライロジック・CoreDNS 修正 | - |
 
 ### 残タスク
 
 | ステップ | 内容 |
 |---|---|
-| 11-5 | sample-backend DBリトライロジック |
 | 11-6 | Crossplane（provider-helm） |
 | 11-7 | Cilium（CNI置き換え） |
 | 11-8 | Local→Cloud 移行パス設計・ADR |
@@ -238,3 +239,34 @@ oha -z 60s -c 50 --host sample-backend.localhost http://172.19.0.2/health
 - `common-app` Service に `name: http` ポート名を付与（v0.3.0）することで、ServiceMonitor による Prometheus scrape が正しく機能するようになった。
 - KEDA は HPA を自動生成するため、`common-app` の `hpa.enabled` と併用しない。
 - Argo Rollouts と KEDA を組み合わせることで、「段階的デプロイ」と「負荷ベースのオートスケール」を同一ワークロードで実現。
+
+### Phase 11-5: DB リトライロジック・CoreDNS 修正
+
+PostgreSQL フェイルオーバー時の接続断に対する耐性をアプリ側に実装し、あわせてクラスタ内から外部 MinIO への DNS 解決問題を修正した。
+
+#### CoreDNS への host.k3d.internal 登録
+
+k3d クラスタ内から `host.k3d.internal`（外部 MinIO）への名前解決ができない問題を発見。CoreDNS の NodeHosts に k3d ネットワークのゲートウェイ IP を追記することで解決した。クラスタ再作成のたびに手動で修正が必要になるため、`make bootstrap` に `fix-coredns` ターゲットを組み込んだ。
+
+```bash
+# CoreDNS を手動修正する場合
+make -C k3d fix-coredns
+
+# bootstrap 時は自動実行される
+make -C k3d bootstrap
+```
+
+#### CNPG フェイルオーバー後の旧 primary 復旧手順
+
+旧 primary が replica に戻る際、pg_wal の残存 WAL を MinIO にアーカイブしようとして `Expected empty archive` エラーが発生し、startup probe が永続的に失敗する問題を確認した。dev 環境での対処は PVC 削除による再クローンが最も確実。
+
+```bash
+# 旧 primary の Pod と PVC を削除（CNPG が新インスタンスを自動作成）
+kubectl delete pod <旧primary-pod> -n sample-app
+kubectl delete pvc <旧primary-pvc> -n sample-app
+```
+
+#### 設計上の決定事項
+- `fix-coredns` は k3d ネットワークのゲートウェイ IP を動的に取得するため、クラスタを再作成してもIPが変わっても対応できる。
+- CoreDNS の NodeHosts は k3s が管理する ConfigMap のため ArgoCD で管理しない。bootstrap スクリプトに組み込む形で冪等性を担保した。
+- CNPG 旧 primary の WAL empty チェック失敗は既知の問題。PVC 削除 → 再クローンが dev 環境での標準 Runbook とする（詳細は platform-adr に記録予定）。
