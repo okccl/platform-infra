@@ -50,8 +50,6 @@ install-cilium:
 		--version $(CILIUM_VERSION) \
 		--namespace kube-system \
 		--set kubeProxyReplacement=false \
-		--set k8sServiceHost=$(API_SERVER_IP) \
-		--set k8sServicePort=6443 \
 		--set hostServices.enabled=false \
 		--set externalIPs.enabled=true \
 		--set nodePort.enabled=true \
