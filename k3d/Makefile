@@ -21,7 +21,7 @@ cluster-status:
 	kubectl get nodes -o wide
 
 # クラスタ再作成からsyncまでを一括実行
-bootstrap: cluster-create bootstrap-argocd bootstrap-sync
+bootstrap: cluster-create fix-coredns bootstrap-argocd bootstrap-sync
 
 # ArgoCDインストール・Root App適用
 bootstrap-argocd:
@@ -87,3 +87,18 @@ bootstrap-sync:
 	@echo "ArgoCD URL: http://argocd.localhost"
 	@echo "ArgoCD 初期パスワード: $$(argocd admin initial-password -n $(ARGOCD_NS) | head -1)"
 	@echo "残りのAppは自動syncで適用されます。argocd app list で確認してください。"
+
+# CoreDNS に host.k3d.internal を追加（MinIO 疎通に必要）
+fix-coredns:
+        $(eval K3D_GW := $(shell docker network inspect k3d-$(CLUSTER_NAME) \
+                --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}'))
+        kubectl get configmap coredns -n kube-system -o json \
+                | python3 -c "import sys,json; \
+                  d=json.load(sys.stdin); \
+                  nh=d['data']['NodeHosts']; \
+                  entry='$(K3D_GW) host.k3d.internal\n'; \
+                  d['data']['NodeHosts']=nh if 'host.k3d.internal' in nh else nh+entry; \
+                  print(json.dumps(d))" \
+                | kubectl apply -f -
+        kubectl rollout restart deployment coredns -n kube-system
+        kubectl rollout status deployment coredns -n kube-system
