@@ -20,3 +20,15 @@ options:
       - arg: --disable=traefik
         nodeFilters:
           - server:*
+      # Cilium に CNI を委ねるため flannel を無効化
+      - arg: --flannel-backend=none
+        nodeFilters:
+          - server:*
+      # Cilium が Network Policy を管理するため k3s 組み込みを無効化
+      - arg: --disable-network-policy
+        nodeFilters:
+          - server:*
+      # Cilium が独自の kube-proxy 代替実装を提供するため無効化
+      - arg: --disable-kube-proxy
+        nodeFilters:
+          - server:*
