@@ -87,6 +87,14 @@ bootstrap-argocd:
 # アプリケーション層の展開（プラットフォーム基盤が安定してから手動実行）
 bootstrap-apps:
 	kubectl apply -f ~/platform-gitops/bootstrap/apps-root.yaml
+	# sample-app namespace の起動を待機
+	kubectl wait --for=jsonpath='{.status.phase}'=Active \
+			namespace/sample-app --timeout=300s
+	# sample-app Secret投入
+	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/minio-backup-secret.yaml \
+			| kubectl apply -f -
+	# goldilocks用ラベル付与
+	kubectl label namespace sample-app goldilocks.fairwinds.com/enabled=true --overwrite
 	@echo "apps-root を適用しました。argocd app list でアプリの sync 状態を確認してください。"
 
 bootstrap-sync:
@@ -117,7 +125,7 @@ bootstrap-sync:
 	kubectl wait --for=condition=ready pod \
 		-l gateway.envoyproxy.io/owning-gateway-name=eg \
 		-n envoy-gateway-system --timeout=300s
-	# CoreDNS に *.platform.local の rewrite を追加（Envoy Gateway 起動後
+	# CoreDNS に *.platform.local の rewrite を追加（Envoy Gateway 起動後）
 	$(eval EG_SVC := $(shell kubectl get svc -n envoy-gateway-system -l gateway.envoyproxy.io/owning-gateway-name=eg -o jsonpath='{.items[0].metadata.name}'))
 	kubectl get configmap coredns -n kube-system -o json \
 		| python3 -c "import sys,json; \
@@ -129,15 +137,6 @@ bootstrap-sync:
 		| kubectl apply -f -
 	kubectl rollout restart deployment coredns -n kube-system
 	kubectl rollout status deployment coredns -n kube-system
-	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/minio-backup-secret.yaml \
-		| kubectl apply -f -
-	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/keycloak-db-credentials.yaml \
-		| kubectl apply -f -
-	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/keycloak-admin-credentials.yaml \
-		| kubectl apply -f -
-	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/argocd-keycloak-secret.yaml \
-		| kubectl apply -f -
-	@echo ""
 	@echo "=== bootstrap完了 ==="
 	@echo "ArgoCD URL: http://argocd.platform.local"
 	@echo "ArgoCD 初期パスワード: $$(argocd admin initial-password -n $(ARGOCD_NS) | head -1)"
