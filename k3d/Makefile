@@ -9,7 +9,7 @@ SOPS_AGE_KEY    := $(HOME)/.config/sops/age/keys.txt
 CILIUM_VERSION  := 1.19.3
 
 .PHONY: cluster-create cluster-delete cluster-status bootstrap \
-        bootstrap-argocd bootstrap-sync fix-coredns install-cilium
+        bootstrap-argocd bootstrap-apps bootstrap-sync fix-coredns install-cilium
 
 cluster-create:
 	# 既存クラスタが残っている場合は削除してから作成
@@ -78,11 +78,16 @@ bootstrap-argocd:
 	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/ghcr-pat.yaml \
 		| kubectl apply -f -
 	# Root App適用
-	kubectl apply -f ~/platform-gitops/bootstrap/root.yaml
-	kubectl apply -f ~/platform-gitops/bootstrap/apps-root.yaml
+        kubectl apply -f ~/platform-gitops/platform/argocd/root-app.yaml
 	# ArgoCD Server の起動を待機
 	kubectl wait --for=condition=available deployment/argocd-server \
 		-n $(ARGOCD_NS) --timeout=300s
+
+
+# アプリケーション層の展開（プラットフォーム基盤が安定してから手動実行）
+bootstrap-apps:
+	kubectl apply -f ~/platform-gitops/bootstrap/apps-root.yaml
+	@echo "apps-root を適用しました。argocd app list でアプリの sync 状態を確認してください。"
 
 bootstrap-sync:
 	# port-forward起動
@@ -118,7 +123,7 @@ bootstrap-sync:
 		| python3 -c "import sys,json; \
 		  d=json.load(sys.stdin); \
 		  cf=d['data']['Corefile']; \
-		  rule='    rewrite name keycloak.platform.local $(EG_SVC).envoy-gateway-system.svc.cluster.local\n    rewrite name argocd.platform.local $(EG_SVC).envoy-gateway-system.svc.cluster.local\n'; \
+		  rule='    rewrite name keycloak.platform.local $(EG_SVC).envoy-gateway-system.svc.cluster.local\n    rewrite name argocd.platform.local $(EG_SVC).envoy-gateway-system.svc.cluster.local\n    rewrite name backstage.platform.local $(EG_SVC).envoy-gateway-system.svc.cluster.local\n'; \
 		  d['data']['Corefile']=cf.replace('ready\n', 'ready\n'+rule) if 'rewrite name keycloak.platform.local' not in cf else cf; \
 		  print(json.dumps(d))" \
 		| kubectl apply -f -
