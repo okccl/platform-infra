@@ -112,15 +112,33 @@ bootstrap-sync:
 	kubectl wait --for=condition=ready pod \
 		-l gateway.envoyproxy.io/owning-gateway-name=eg \
 		-n envoy-gateway-system --timeout=300s
+	# CoreDNS に *.platform.local の rewrite を追加（Envoy Gateway 起動後）
+	$(eval EG_SVC := $(shell kubectl get svc -n envoy-gateway-system -l gateway.envoyproxy.io/owning-gateway-name=eg -o jsonpath='{.items[0].metadata.name}'))
+	kubectl get configmap coredns -n kube-system -o json \
+		| python3 -c "import sys,json; \
+		  d=json.load(sys.stdin); \
+		  cf=d['data']['Corefile']; \
+		  rule='    rewrite name keycloak.platform.local $(EG_SVC).envoy-gateway-system.svc.cluster.local\n    rewrite name argocd.platform.local $(EG_SVC).envoy-gateway-system.svc.cluster.local\n'; \
+		  d['data']['Corefile']=cf.replace('ready\n', 'ready\n'+rule) if 'rewrite name keycloak.platform.local' not in cf else cf; \
+		  print(json.dumps(d))" \
+		| kubectl apply -f -
+	kubectl rollout restart deployment coredns -n kube-system
+	kubectl rollout status deployment coredns -n kube-system
 	# sample-app Secret投入
 	kubectl wait --for=jsonpath='{.status.phase}'=Active \
 		namespace/sample-app --timeout=300s
 	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/minio-backup-secret.yaml \
 		| kubectl apply -f -
+	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/keycloak-db-credentials.yaml \
+		| kubectl apply -f -
+	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/keycloak-admin-credentials.yaml \
+		| kubectl apply -f -
+	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/argocd-keycloak-secret.yaml \
+		| kubectl apply -f -
 	# goldilocks用ラベル付与
 	kubectl label namespace sample-app goldilocks.fairwinds.com/enabled=true --overwrite
 	@echo ""
 	@echo "=== bootstrap完了 ==="
-	@echo "ArgoCD URL: http://argocd.localhost"
+	@echo "ArgoCD URL: http://argocd.platform.local"
 	@echo "ArgoCD 初期パスワード: $$(argocd admin initial-password -n $(ARGOCD_NS) | head -1)"
 	@echo "残りのAppは自動syncで適用されます。argocd app list で確認してください。"
