@@ -78,7 +78,7 @@ bootstrap-argocd:
 	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/ghcr-pat.yaml \
 		| kubectl apply -f -
 	# Root App適用
-        kubectl apply -f ~/platform-gitops/platform/argocd/root-app.yaml
+	kubectl apply -f ~/platform-gitops/platform/argocd/root-app.yaml
 	# ArgoCD Server の起動を待機
 	kubectl wait --for=condition=available deployment/argocd-server \
 		-n $(ARGOCD_NS) --timeout=300s
