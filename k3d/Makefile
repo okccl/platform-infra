@@ -137,8 +137,6 @@ bootstrap-sync:
 		| kubectl apply -f -
 	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/argocd-keycloak-secret.yaml \
 		| kubectl apply -f -
-	# goldilocks用ラベル付与
-	kubectl label namespace sample-app goldilocks.fairwinds.com/enabled=true --overwrite
 	@echo ""
 	@echo "=== bootstrap完了 ==="
 	@echo "ArgoCD URL: http://argocd.platform.local"
