@@ -117,7 +117,7 @@ bootstrap-sync:
 	kubectl wait --for=condition=ready pod \
 		-l gateway.envoyproxy.io/owning-gateway-name=eg \
 		-n envoy-gateway-system --timeout=300s
-	# CoreDNS に *.platform.local の rewrite を追加（Envoy Gateway 起動後）
+	# CoreDNS に *.platform.local の rewrite を追加（Envoy Gateway 起動後
 	$(eval EG_SVC := $(shell kubectl get svc -n envoy-gateway-system -l gateway.envoyproxy.io/owning-gateway-name=eg -o jsonpath='{.items[0].metadata.name}'))
 	kubectl get configmap coredns -n kube-system -o json \
 		| python3 -c "import sys,json; \
@@ -129,9 +129,6 @@ bootstrap-sync:
 		| kubectl apply -f -
 	kubectl rollout restart deployment coredns -n kube-system
 	kubectl rollout status deployment coredns -n kube-system
-	# sample-app Secret投入
-	kubectl wait --for=jsonpath='{.status.phase}'=Active \
-		namespace/sample-app --timeout=300s
 	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/minio-backup-secret.yaml \
 		| kubectl apply -f -
 	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/keycloak-db-credentials.yaml \
