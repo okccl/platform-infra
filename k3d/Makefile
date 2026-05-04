@@ -144,11 +144,11 @@ bootstrap-sync:
 		| kubectl apply -f -
 	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/backstage-github-token-source.yaml \
 		| kubectl apply -f -
-	# gateway-stack を sync して完了待機
-	kubectl apply -f ~/platform-gitops/platform/group-roots/gateway-stack.yaml
-	@until argocd app get gateway-stack &>/dev/null; do echo "gateway-stack 作成待機中..."; sleep 5; done
-	argocd app sync gateway-stack --server-side || true
-	# gateway-stack の子 App が起動するまで待機（ArgoCD GUI HTTPS アクセス可能になるまで）
+	# root-1-gateway を sync して完了待機
+	kubectl apply -f ~/platform-gitops/platform/group-roots/root-1-gateway.yaml
+	@until argocd app get root-1-gateway &>/dev/null; do echo "root-1-gateway 作成待機中..."; sleep 5; done
+	argocd app sync root-1-gateway --server-side || true
+	# root-1-gateway の子 App が起動するまで待機（ArgoCD GUI HTTPS アクセス可能になるまで）
 	@until kubectl get deployment envoy-gateway -n envoy-gateway-system 2>/dev/null; do echo "envoy-gateway 待機中..."; sleep 5; done
 	kubectl wait --for=condition=available deployment/envoy-gateway \
 		-n envoy-gateway-system --timeout=600s
@@ -177,14 +177,14 @@ bootstrap-sync:
 		--password $$ARGOCD_PASS \
 		--insecure \
 		--name argocd.platform.local
-	# auth-stack を sync して完了待機（CNPG webhook 含む全コンポーネントが Ready になるまで）
-	kubectl apply -f ~/platform-gitops/platform/group-roots/auth-stack.yaml
-	@until argocd app get auth-stack &>/dev/null; do echo "auth-stack 作成待機中..."; sleep 5; done
-	argocd app sync auth-stack --server-side || true
-	argocd app wait auth-stack --health --timeout 900
-	# platform を sync（auth-stack 完了後なので CNPG webhook は確実に Ready）
-	kubectl apply -f ~/platform-gitops/platform/group-roots/platform.yaml
-	@until argocd app get platform &>/dev/null; do echo "platform 作成待機中..."; sleep 5; done
-	argocd app sync platform --server-side || true
+	# root-2-auth を sync して完了待機（CNPG webhook 含む全コンポーネントが Ready になるまで）
+	kubectl apply -f ~/platform-gitops/platform/group-roots/root-2-auth.yaml
+	@until argocd app get root-2-auth &>/dev/null; do echo "root-2-auth 作成待機中..."; sleep 5; done
+	argocd app sync root-2-auth --server-side || true
+	argocd app wait root-2-auth --health --timeout 900
+	# root-3-others を sync（root-2-auth 完了後なので CNPG webhook は確実に Ready）
+	kubectl apply -f ~/platform-gitops/platform/group-roots/root-3-others.yaml
+	@until argocd app get root-3-others &>/dev/null; do echo "root-3-others 作成待機中..."; sleep 5; done
+	argocd app sync root-3-others --server-side || true
 	@echo "=== bootstrap完了 ==="
 	@echo "ArgoCD URL: https://argocd.platform.local"
