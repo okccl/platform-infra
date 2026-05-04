@@ -77,7 +77,9 @@ bootstrap-argocd:
 		| kubectl create secret generic argocd-local-ca \
 			-n $(ARGOCD_NS) \
 			--from-file=ca.crt=/dev/stdin \
-			--dry-run=client -o yaml | kubectl apply -f -
+			--dry-run=client -o yaml \
+		| kubectl label --local -f - app.kubernetes.io/part-of=argocd -o yaml \
+		| kubectl apply -f -
 	# ArgoCDインストール
 	helm repo add argocd https://argoproj.github.io/argo-helm
 	helm repo update
