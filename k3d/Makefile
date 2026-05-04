@@ -183,7 +183,7 @@ bootstrap-sync:
 	kubectl apply -f ~/platform-gitops/platform/group-roots/root-2-auth.yaml
 	@until argocd app get root-2-auth &>/dev/null; do echo "root-2-auth 作成待機中..."; sleep 5; done
 	argocd app sync root-2-auth --server-side || true
-	argocd app wait root-2-auth --health --timeout 900
+	argocd app wait root-2-auth --sync --health --timeout 900
 	# root-3-others を sync（root-2-auth 完了後なので CNPG webhook は確実に Ready）
 	kubectl apply -f ~/platform-gitops/platform/group-roots/root-3-others.yaml
 	@until argocd app get root-3-others &>/dev/null; do echo "root-3-others 作成待機中..."; sleep 5; done
