@@ -158,6 +158,14 @@ bootstrap-sync:
 	kubectl rollout status deployment coredns -n kube-system
 	# cert-manager が生成した CA 証明書を argocd-local-ca Secret として登録
 	bash $(HOME)/platform-infra/scripts/update-root-ca.sh
+	# port-forward を切って argocd.platform.local 経由に切り替え
+	lsof -ti:8080 | xargs kill -9 2>/dev/null || true
+	@ARGOCD_PASS=$$(argocd admin initial-password -n $(ARGOCD_NS) | head -1) && \
+	argocd login argocd.platform.local \
+		--username admin \
+		--password $$ARGOCD_PASS \
+		--insecure \
+		--name argocd.platform.local
 	# auth-stack が Healthy になるまで待機（Keycloak ログイン可能になるまで）
 	@until argocd app get auth-stack &>/dev/null; do echo "auth-stack 作成待機中..."; sleep 5; done
 	argocd app wait auth-stack --health --timeout 900
