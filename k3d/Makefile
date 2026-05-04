@@ -135,9 +135,13 @@ bootstrap-sync:
 	# root sync 開始（gateway-stack → auth-stack → platform の順で自動進行）
 	argocd app get root --refresh > /dev/null
 	argocd app sync root --server-side --async || true
-	# gateway-stack が Healthy になるまで待機（ArgoCD GUI HTTPS アクセス可能になるまで）
-	@until argocd app get gateway-stack &>/dev/null; do echo "gateway-stack 作成待機中..."; sleep 5; done
-	argocd app wait gateway-stack --health --timeout 600
+	# gateway-stack の子 App が起動するまで待機（ArgoCD GUI HTTPS アクセス可能になるまで）
+	@until kubectl get deployment envoy-gateway -n envoy-gateway-system 2>/dev/null; do echo "envoy-gateway 待機中..."; sleep 5; done
+	kubectl wait --for=condition=available deployment/envoy-gateway \
+		-n envoy-gateway-system --timeout=600s
+	kubectl wait --for=condition=ready pod \
+		-l gateway.envoyproxy.io/owning-gateway-name=eg \
+		-n envoy-gateway-system --timeout=300s
 	# CoreDNS に *.platform.local の rewrite を追加（Envoy Gateway 起動後）
 	$(eval EG_SVC := $(shell kubectl get svc -n envoy-gateway-system -l gateway.envoyproxy.io/owning-gateway-name=eg -o jsonpath='{.items[0].metadata.name}'))
 	kubectl get configmap coredns -n kube-system -o json \
@@ -152,7 +156,8 @@ bootstrap-sync:
 	kubectl rollout status deployment coredns -n kube-system
 	# rootCA を動的取得して values.yaml を更新・push・ArgoCD に反映
 	bash $(HOME)/platform-infra/scripts/update-root-ca.sh
-	argocd app sync argocd --server-side --wait
+	argocd app sync argocd --server-side
+	argocd app wait argocd --health --timeout 300
 	# auth-stack が Healthy になるまで待機（Keycloak ログイン可能になるまで）
 	@until argocd app get auth-stack &>/dev/null; do echo "auth-stack 作成待機中..."; sleep 5; done
 	argocd app wait auth-stack --health --timeout 900
