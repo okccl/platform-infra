@@ -1,0 +1,16 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: platform-infra
+  description: k3d クラスタ IaC・ツール管理（mise）・Terraform（EKS）
+  annotations:
+    github.com/project-slug: okccl/platform-infra
+  tags:
+    - terraform
+    - k3d
+    - kubernetes
+spec:
+  type: library
+  lifecycle: production
+  owner: user:platform-admin
+  system: platform
