@@ -115,16 +115,29 @@ bootstrap-sync:
 	# リポジトリ登録
 	argocd repo add $(GITOPS_REPO) --ssh-private-key-path $(SSH_KEY) 2>/dev/null || true
 	argocd repo add $(CHARTS_REPO) --ssh-private-key-path $(SSH_KEY) 2>/dev/null || true
-	# root appのsyncを開始（sync-waveで順序制御）
+	# 全 source secrets を sync 前に投入
+	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/keycloak-db-credentials.yaml \
+		| kubectl apply -f -
+	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/keycloak-admin-credentials.yaml \
+		| kubectl apply -f -
+	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/keycloak-platform-admin-source.yaml \
+		| kubectl apply -f -
+	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/argocd-keycloak-secret.yaml \
+		| kubectl apply -f -
+	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/backstage-db-credentials-source.yaml \
+		| kubectl apply -f -
+	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/backstage-secret-source.yaml \
+		| kubectl apply -f -
+	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/backstage-keycloak-secret-source.yaml \
+		| kubectl apply -f -
+	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/backstage-github-token-source.yaml \
+		| kubectl apply -f -
+	# root sync 開始（gateway-stack → auth-stack → platform の順で自動進行）
 	argocd app get root --refresh > /dev/null
 	argocd app sync root --server-side --async || true
-	@until kubectl get deployment envoy-gateway -n envoy-gateway-system 2>/dev/null; do echo "envoy-gateway待機..."; sleep 5; done
-	kubectl wait --for=condition=available deployment/envoy-gateway \
-		-n envoy-gateway-system --timeout=600s
-	# envoy proxyデータプレーンの起動を待機（これが完了するとArgoCD GUIにアクセス可能）
-	kubectl wait --for=condition=ready pod \
-		-l gateway.envoyproxy.io/owning-gateway-name=eg \
-		-n envoy-gateway-system --timeout=300s
+	# gateway-stack が Healthy になるまで待機（ArgoCD GUI HTTPS アクセス可能になるまで）
+	@until argocd app get gateway-stack &>/dev/null; do echo "gateway-stack 作成待機中..."; sleep 5; done
+	argocd app wait gateway-stack --health --timeout 600
 	# CoreDNS に *.platform.local の rewrite を追加（Envoy Gateway 起動後）
 	$(eval EG_SVC := $(shell kubectl get svc -n envoy-gateway-system -l gateway.envoyproxy.io/owning-gateway-name=eg -o jsonpath='{.items[0].metadata.name}'))
 	kubectl get configmap coredns -n kube-system -o json \
@@ -137,7 +150,12 @@ bootstrap-sync:
 		| kubectl apply -f -
 	kubectl rollout restart deployment coredns -n kube-system
 	kubectl rollout status deployment coredns -n kube-system
+	# rootCA を動的取得して values.yaml を更新・push・ArgoCD に反映
+	bash $(HOME)/platform-infra/scripts/update-root-ca.sh
+	argocd app sync argocd --server-side --wait
+	# auth-stack が Healthy になるまで待機（Keycloak ログイン可能になるまで）
+	@until argocd app get auth-stack &>/dev/null; do echo "auth-stack 作成待機中..."; sleep 5; done
+	argocd app wait auth-stack --health --timeout 900
 	@echo "=== bootstrap完了 ==="
-	@echo "ArgoCD URL: http://argocd.platform.local"
-	@echo "ArgoCD 初期パスワード: $$(argocd admin initial-password -n $(ARGOCD_NS) | head -1)"
-	@echo "残りのAppは自動syncで適用されます。argocd app list で確認してください。"
+	@echo "ArgoCD URL: https://argocd.platform.local"
+	@echo "残りの platform グループは自動 sync で適用されます。argocd app list で確認してください。"
