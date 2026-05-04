@@ -112,6 +112,7 @@ bootstrap-apps:
 bootstrap-sync:
 	# port-forward起動
 	lsof -ti:8080 | xargs kill -9 2>/dev/null || true
+	@until curl -sk https://argocd.platform.local/healthz | grep -q ok; do echo "argocd.platform.local 疎通待機中..."; sleep 5; done
 	sleep 2
 	kubectl port-forward svc/argocd-server -n $(ARGOCD_NS) 8080:80 &
 	sleep 5
@@ -172,6 +173,7 @@ bootstrap-sync:
 	kubectl rollout status deployment coredns -n kube-system
 	# port-forward を切って argocd.platform.local 経由に切り替え
 	lsof -ti:8080 | xargs kill -9 2>/dev/null || true
+	@until curl -sk https://argocd.platform.local/healthz | grep -q ok; do echo "argocd.platform.local 疎通待機中..."; sleep 5; done
 	@ARGOCD_PASS=$$(argocd admin initial-password -n $(ARGOCD_NS) | head -1) && \
 	argocd login argocd.platform.local \
 		--username admin \
