@@ -66,6 +66,18 @@ bootstrap-argocd:
 	@if [ ! -f "$(SOPS_AGE_KEY)" ]; then \
 		echo "エラー: Age秘密鍵が見つかりません: $(SOPS_AGE_KEY)"; exit 1; \
 	fi
+	# cert-manager namespace を作成して local-ca-secret を事前投入（cert-manager が新規CA生成しないよう）
+	kubectl create namespace cert-manager --dry-run=client -o yaml | kubectl apply -f -
+	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/local-ca-secret.yaml \
+		| kubectl apply -f -
+	# argocd namespace を作成して argocd-local-ca Secret を事前投入
+	kubectl create namespace $(ARGOCD_NS) --dry-run=client -o yaml | kubectl apply -f -
+	kubectl get secret local-ca-secret -n cert-manager \
+		-o jsonpath='{.data.tls\.crt}' | base64 -d \
+		| kubectl create secret generic argocd-local-ca \
+			-n $(ARGOCD_NS) \
+			--from-file=ca.crt=/dev/stdin \
+			--dry-run=client -o yaml | kubectl apply -f -
 	# ArgoCDインストール
 	helm repo add argocd https://argoproj.github.io/argo-helm
 	helm repo update
@@ -156,8 +168,6 @@ bootstrap-sync:
 		| kubectl apply -f -
 	kubectl rollout restart deployment coredns -n kube-system
 	kubectl rollout status deployment coredns -n kube-system
-	# cert-manager が生成した CA 証明書を argocd-local-ca Secret として登録
-	bash $(HOME)/platform-infra/scripts/update-root-ca.sh
 	# port-forward を切って argocd.platform.local 経由に切り替え
 	lsof -ti:8080 | xargs kill -9 2>/dev/null || true
 	@ARGOCD_PASS=$$(argocd admin initial-password -n $(ARGOCD_NS) | head -1) && \
