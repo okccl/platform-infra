@@ -184,6 +184,9 @@ bootstrap-sync:
 	@until argocd app get root-2-auth &>/dev/null; do echo "root-2-auth 作成待機中..."; sleep 5; done
 	argocd app sync root-2-auth --server-side || true
 	argocd app wait root-2-auth --sync --health --timeout 900
+	# keycloak Pod が実際に起動するまで待機
+	argocd app wait keycloak --health --timeout 600
+	argocd app wait keycloak-config-cli --health --timeout 600
 	# root-3-others を sync（root-2-auth 完了後なので CNPG webhook は確実に Ready）
 	kubectl apply -f ~/platform-gitops/platform/group-roots/root-3-others.yaml
 	@until argocd app get root-3-others &>/dev/null; do echo "root-3-others 作成待機中..."; sleep 5; done
