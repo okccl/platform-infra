@@ -152,6 +152,7 @@ bootstrap-sync:
 	@until kubectl get deployment envoy-gateway -n envoy-gateway-system 2>/dev/null; do echo "envoy-gateway 待機中..."; sleep 5; done
 	kubectl wait --for=condition=available deployment/envoy-gateway \
 		-n envoy-gateway-system --timeout=600s
+	@until kubectl get pod -l gateway.envoyproxy.io/owning-gateway-name=eg -n envoy-gateway-system 2>/dev/null | grep -q eg; do echo "Envoy Gateway Pod 作成待機中..."; sleep 5; done
 	kubectl wait --for=condition=ready pod \
 		-l gateway.envoyproxy.io/owning-gateway-name=eg \
 		-n envoy-gateway-system --timeout=300s
