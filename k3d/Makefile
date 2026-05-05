@@ -61,6 +61,11 @@ install-cilium:
 	# Cilium が全ノードで Ready になるまで待機
 	kubectl rollout status daemonset/cilium -n kube-system --timeout=300s
 
+# sops Age秘密鍵をargocd namespaceに投入（ksops用）
+kubectl create secret generic sops-age \
+	--from-file=keys.txt=$(SOPS_AGE_KEY) \
+	-n $(ARGOCD_NS) \
+	--dry-run=client -o yaml | kubectl apply -f -
 # ArgoCDインストール
 bootstrap-argocd:
 	@if [ ! -f "$(SOPS_AGE_KEY)" ]; then \
@@ -88,9 +93,6 @@ bootstrap-argocd:
 		--create-namespace \
 		-f ~/platform-gitops/platform/argocd/values.yaml \
 		--wait
-	# ghcr-pat をSOPSで復号して投入
-	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/ghcr-pat.yaml \
-		| kubectl apply -f -
 	# ArgoCD Server の起動を待機
 	kubectl wait --for=condition=available deployment/argocd-server \
 		-n $(ARGOCD_NS) --timeout=300s
@@ -127,23 +129,6 @@ bootstrap-sync:
 	# リポジトリ登録
 	argocd repo add $(GITOPS_REPO) --ssh-private-key-path $(SSH_KEY) 2>/dev/null || true
 	argocd repo add $(CHARTS_REPO) --ssh-private-key-path $(SSH_KEY) 2>/dev/null || true
-	# 全 source secrets を sync 前に投入
-	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/keycloak-db-credentials.yaml \
-		| kubectl apply -f -
-	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/keycloak-admin-credentials.yaml \
-		| kubectl apply -f -
-	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/keycloak-platform-admin-source.yaml \
-		| kubectl apply -f -
-	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/argocd-keycloak-secret.yaml \
-		| kubectl apply -f -
-	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/backstage-db-credentials-source.yaml \
-		| kubectl apply -f -
-	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/backstage-secret-source.yaml \
-		| kubectl apply -f -
-	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/backstage-keycloak-secret-source.yaml \
-		| kubectl apply -f -
-	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/backstage-github-token-source.yaml \
-		| kubectl apply -f -
 	# root-1-gateway を sync して完了待機
 	kubectl apply -f ~/platform-gitops/platform/group-roots/root-1-gateway.yaml
 	@until argocd app get root-1-gateway &>/dev/null; do echo "root-1-gateway 作成待機中..."; sleep 5; done
