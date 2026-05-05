@@ -61,11 +61,6 @@ install-cilium:
 	# Cilium が全ノードで Ready になるまで待機
 	kubectl rollout status daemonset/cilium -n kube-system --timeout=300s
 
-	# sops Age秘密鍵をargocd namespaceに投入（ksops用）
-	kubectl create secret generic sops-age \
-	--from-file=keys.txt=$(SOPS_AGE_KEY) \
-	-n $(ARGOCD_NS) \
-	--dry-run=client -o yaml | kubectl apply -f -
 # ArgoCDインストール
 bootstrap-argocd:
 	@if [ ! -f "$(SOPS_AGE_KEY)" ]; then \
@@ -86,6 +81,11 @@ bootstrap-argocd:
 		| kubectl label --local -f - app.kubernetes.io/part-of=argocd -o yaml \
 		| kubectl apply -f -
 	# ArgoCDインストール
+	# sops Age秘密鍵をargocd namespaceに投入（ksops用）
+	kubectl create secret generic sops-age \
+		--from-file=keys.txt=$(SOPS_AGE_KEY) \
+		-n $(ARGOCD_NS) \
+		--dry-run=client -o yaml | kubectl apply -f -
 	helm repo add argocd https://argoproj.github.io/argo-helm
 	helm repo update
 	helm upgrade --install argocd argocd/argo-cd \
