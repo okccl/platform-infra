@@ -101,12 +101,6 @@ bootstrap-argocd:
 # アプリケーション層の展開（プラットフォーム基盤が安定してから手動実行）
 bootstrap-apps:
 	kubectl apply -f ~/platform-gitops/bootstrap/apps-root.yaml
-	# sample-app namespace の起動を待機
-	kubectl wait --for=jsonpath='{.status.phase}'=Active \
-			namespace/sample-app --timeout=300s
-	# sample-app Secret投入
-	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/minio-backup-secret.yaml \
-			| kubectl apply -f -
 	# goldilocks用ラベル付与
 	kubectl label namespace sample-app goldilocks.fairwinds.com/enabled=true --overwrite
 	@echo "apps-root を適用しました。argocd app list でアプリの sync 状態を確認してください。"
