@@ -1,6 +1,5 @@
 # platform-team 共通ツール定義（source of truth）
-# 他リポジトリは extends で参照する
-# クローン時は platform-infra と同階層に配置すること
+# 他リポジトリからはシンボリックリンクで参照する
 
 [tools]
 kubectl = "1.35.3"                                                                   # Kubernetes CLI
