@@ -61,8 +61,8 @@ install-cilium:
 	# Cilium が全ノードで Ready になるまで待機
 	kubectl rollout status daemonset/cilium -n kube-system --timeout=300s
 
-# sops Age秘密鍵をargocd namespaceに投入（ksops用）
-kubectl create secret generic sops-age \
+	# sops Age秘密鍵をargocd namespaceに投入（ksops用）
+	kubectl create secret generic sops-age \
 	--from-file=keys.txt=$(SOPS_AGE_KEY) \
 	-n $(ARGOCD_NS) \
 	--dry-run=client -o yaml | kubectl apply -f -
