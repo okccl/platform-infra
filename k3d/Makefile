@@ -1,8 +1,5 @@
 CLUSTER_CONFIG  := cluster.yaml
 CLUSTER_NAME    := dev
-GITOPS_REPO     := git@github.com:okccl/platform-gitops.git
-CHARTS_REPO     := git@github.com:okccl/platform-charts.git
-SSH_KEY         := ~/.ssh/id_ed25519
 ARGOCD_NS       := argocd
 SECRETS_DIR     := ~/platform-gitops/secrets/encrypted
 SOPS_AGE_KEY    := $(HOME)/.config/sops/age/keys.txt
@@ -96,6 +93,9 @@ bootstrap-argocd:
 	# ArgoCD Server の起動を待機
 	kubectl wait --for=condition=available deployment/argocd-server \
 		-n $(ARGOCD_NS) --timeout=300s
+	# GitHub App 認証でリポジトリ接続（credential template を適用）
+	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/argocd-repo-creds.yaml \
+		| kubectl apply -f -
 
 
 # アプリケーション層の展開（プラットフォーム基盤が安定してから手動実行）
@@ -118,11 +118,6 @@ bootstrap-sync:
 		--password $$ARGOCD_PASS \
 		--plaintext \
 		--name localhost
-	# SSHエージェント起動・鍵登録
-	eval $$(ssh-agent -s) && ssh-add $(SSH_KEY)
-	# リポジトリ登録
-	argocd repo add $(GITOPS_REPO) --ssh-private-key-path $(SSH_KEY) 2>/dev/null || true
-	argocd repo add $(CHARTS_REPO) --ssh-private-key-path $(SSH_KEY) 2>/dev/null || true
 	# root-1-gateway を sync して完了待機
 	kubectl apply -f ~/platform-gitops/platform/group-roots/root-1-gateway.yaml
 	@until argocd app get root-1-gateway &>/dev/null; do echo "root-1-gateway 作成待機中..."; sleep 5; done
