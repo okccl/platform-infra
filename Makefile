@@ -26,6 +26,8 @@ cluster-start: ## k3d クラスターを起動し Cilium eBPF マップを再初
 	k3d cluster start $(CLUSTER_NAME)
 	@echo ">>> ノードの準備を待機中..."
 	kubectl wait node --all --for=condition=Ready --timeout=120s
+	@echo ">>> CiliumNode キャッシュをクリア中..."
+	kubectl delete ciliumnodes --all
 	@echo ">>> Cilium eBPF マップを再初期化中..."
 	kubectl rollout restart daemonset cilium -n kube-system
 	kubectl rollout status daemonset cilium -n kube-system --timeout=120s
