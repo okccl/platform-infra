@@ -29,3 +29,7 @@ options:
         nodeFilters:
           - server:*
       # kube-proxy は k3s に任せる（ローカル環境での安定性優先）
+      # IP 再割り当て時の kubelet 証明書検証エラーを回避（ローカル dev 環境のみ）
+      - arg: --kube-apiserver-arg=kubelet-insecure-tls
+        nodeFilters:
+          - server:*
