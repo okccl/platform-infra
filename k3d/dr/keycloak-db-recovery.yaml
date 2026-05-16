@@ -1,0 +1,48 @@
+# DR マニフェスト: keycloak-db
+# 用途: クラスター全損後に MinIO からリストアする際のみ使用（ArgoCD 管理外）
+# 使用方法: Runbook を参照
+#
+# クラスター全損（k3d cluster delete）→ MinIO からリストア:
+#   endpointURL: "http://host.k3d.internal:9000"  ← このファイルのデフォルト
+#
+# WSL 全損 → GCS からリストア:
+#   endpointURL を GCS エンドポイントに変更（Runbook 参照）
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: keycloak-db
+  namespace: keycloak
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:17
+  storage:
+    size: 2Gi
+    storageClass: local-path-retain
+  bootstrap:
+    recovery:
+      source: minio-backup
+  externalClusters:
+    - name: minio-backup
+      barmanObjectStore:
+        endpointURL: "http://host.k3d.internal:9000"
+        destinationPath: "s3://cnpg-backup/keycloak-db"
+        s3Credentials:
+          accessKeyId:
+            name: minio-backup-secret
+            key: ACCESS_KEY_ID
+          secretAccessKey:
+            name: minio-backup-secret
+            key: ACCESS_SECRET_KEY
+        wal:
+          compression: gzip
+        data:
+          compression: gzip
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  monitoring:
+    enablePodMonitor: true
