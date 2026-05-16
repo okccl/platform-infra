@@ -24,6 +24,12 @@ cluster-stop: ## k3d クラスターを停止
 
 cluster-start: ## k3d クラスターを起動し Cilium eBPF マップを再初期化
 	k3d cluster start $(CLUSTER_NAME)
+	@echo ">>> kubelet 証明書を新 IP で再生成中（WSL 再起動対応）..."
+	@for node in $$(k3d node list --no-headers | grep -v loadbalancer | awk '{print $$1}'); do \
+	    docker exec $$node rm -f /var/lib/rancher/k3s/agent/serving-kubelet.crt /var/lib/rancher/k3s/agent/serving-kubelet.key; \
+	    docker restart $$node > /dev/null; \
+	done
+	@sleep 10
 	@echo ">>> ノードの準備を待機中..."
 	kubectl wait node --all --for=condition=Ready --timeout=120s
 	@echo ">>> CiliumNode キャッシュをクリア中..."
