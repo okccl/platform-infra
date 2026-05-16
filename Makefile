@@ -2,7 +2,7 @@
 
 CLUSTER_NAME := dev
 
-.PHONY: help bootstrap init check cluster-start cluster-stop cluster-restart
+.PHONY: help bootstrap init check cluster-start cluster-stop cluster-restart generate-dr-manifests
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -44,3 +44,6 @@ cluster-start: ## k3d クラスターを起動し Cilium eBPF マップを再初
 	@echo ">>> クラスター起動完了"
 
 cluster-restart: cluster-stop cluster-start ## k3d クラスターを安全に再起動（Cilium eBPF 再初期化含む）
+
+generate-dr-manifests: ## GitOps ソースから DR マニフェストを生成（DR 手順の最初のステップ）
+	$(MAKE) -C k3d generate-dr-manifests

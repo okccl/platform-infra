@@ -6,7 +6,11 @@ SOPS_AGE_KEY    := $(HOME)/.config/sops/age/keys.txt
 CILIUM_VERSION  := 1.19.3
 
 .PHONY: cluster-create cluster-delete cluster-status bootstrap \
-        bootstrap-argocd bootstrap-apps bootstrap-sync fix-coredns install-cilium
+        bootstrap-argocd bootstrap-apps bootstrap-sync fix-coredns install-cilium \
+        generate-dr-manifests
+
+generate-dr-manifests: ## GitOps ソースから DR マニフェストを生成（DR 手順の最初のステップ）
+	@python3 scripts/generate-dr-manifests.py
 
 cluster-create:
 	# 既存クラスタが残っている場合は削除してから作成
