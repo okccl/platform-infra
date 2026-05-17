@@ -126,11 +126,11 @@ bootstrap-sync:
 		--password $$ARGOCD_PASS \
 		--plaintext \
 		--name localhost
-	# root-1-gateway を sync して完了待機
-	kubectl apply -f ~/platform-gitops/platform/group-roots/root-1-gateway.yaml
-	@until argocd app get root-1-gateway &>/dev/null; do echo "root-1-gateway 作成待機中..."; sleep 5; done
-	argocd app sync root-1-gateway --server-side || true
-	# root-1-gateway の子 App が起動するまで待機（ArgoCD GUI HTTPS アクセス可能になるまで）
+	# 単一ルート App を apply
+	kubectl apply -f ~/platform-gitops/platform/group-roots/root.yaml
+	@until argocd app get root &>/dev/null; do echo "root 作成待機中..."; sleep 5; done
+	argocd app sync root --server-side || true
+	# Envoy Gateway Pod が Ready になるまで待機（argocd.platform.local アクセスに必要）
 	@until kubectl get deployment envoy-gateway -n envoy-gateway-system 2>/dev/null; do echo "envoy-gateway 待機中..."; sleep 5; done
 	kubectl wait --for=condition=available deployment/envoy-gateway \
 		-n envoy-gateway-system --timeout=600s
@@ -147,17 +147,7 @@ bootstrap-sync:
 		--password $$ARGOCD_PASS \
 		--insecure \
 		--name argocd.platform.local
-	# root-2-auth を sync して完了待機（CNPG webhook 含む全コンポーネントが Ready になるまで）
-	kubectl apply -f ~/platform-gitops/platform/group-roots/root-2-auth.yaml
-	@until argocd app get root-2-auth &>/dev/null; do echo "root-2-auth 作成待機中..."; sleep 5; done
-	argocd app sync root-2-auth --server-side || true
-	argocd app wait root-2-auth --sync --health --timeout 900
-	# keycloak Pod が実際に起動するまで待機
-	argocd app wait keycloak --health --timeout 600
-	argocd app wait keycloak-config-cli --health --timeout 600
-	# root-3-others を sync（root-2-auth 完了後なので CNPG webhook は確実に Ready）
-	kubectl apply -f ~/platform-gitops/platform/group-roots/root-3-others.yaml
-	@until argocd app get root-3-others &>/dev/null; do echo "root-3-others 作成待機中..."; sleep 5; done
-	argocd app sync root-3-others --server-side || true
+	# 全 wave 完了まで待機
+	argocd app wait root --sync --health --timeout 1800
 	@echo "=== bootstrap完了 ==="
 	@echo "ArgoCD URL: https://argocd.platform.local"
