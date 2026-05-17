@@ -147,7 +147,18 @@ bootstrap-sync:
 		--password $$ARGOCD_PASS \
 		--insecure \
 		--name argocd.platform.local
-	# 全 wave 完了まで待機
-	argocd app wait root --sync --health --timeout 1800
-	@echo "=== bootstrap完了 ==="
-	@echo "ArgoCD URL: https://argocd.platform.local"
+	# 一次完了：ArgoCD GUI アクセス可能
+	@ARGOCD_PASS=$$(argocd admin initial-password -n $(ARGOCD_NS) | head -1) && \
+	echo "" && \
+	echo "=== ArgoCD 起動完了 ===" && \
+	echo "URL:      https://argocd.platform.local" && \
+	echo "Username: admin" && \
+	echo "Password: $$ARGOCD_PASS" && \
+	echo "残り wave の sync を待機中..."
+	# Keycloak が Healthy になるまで待機
+	@until argocd app get keycloak &>/dev/null; do sleep 5; done
+	argocd app wait keycloak --health --timeout 900
+	@echo ""
+	@echo "=== bootstrap 完了 ==="
+	@echo "ArgoCD URL:   https://argocd.platform.local"
+	@echo "Keycloak URL: https://keycloak.platform.local"
