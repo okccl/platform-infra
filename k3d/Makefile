@@ -26,7 +26,8 @@ cluster-status:
 # Cilium を先にインストールしてから CoreDNS を設定する
 bootstrap: cluster-create install-cilium fix-coredns bootstrap-argocd bootstrap-sync
 
-# CoreDNS に host.k3d.internal を追加（MinIO 疎通に必要）
+# CoreDNS に host.k3d.internal と *.platform.local rewrite を追加
+# *.platform.local は固定 SVC 名 envoy-eg へのリライトルール（bootstrap 前に書き込み可能）
 fix-coredns:
 	$(eval K3D_GW := $(shell docker network inspect k3d-$(CLUSTER_NAME) \
 		--format '{{range .IPAM.Config}}{{.Gateway}}{{end}}'))
@@ -36,6 +37,9 @@ fix-coredns:
 		  nh=d['data']['NodeHosts']; \
 		  entry='$(K3D_GW) host.k3d.internal\n'; \
 		  d['data']['NodeHosts']=nh if 'host.k3d.internal' in nh else nh+entry; \
+		  cf=d['data']['Corefile']; \
+		  rule='    rewrite name keycloak.platform.local envoy-eg.envoy-gateway-system.svc.cluster.local\n    rewrite name argocd.platform.local envoy-eg.envoy-gateway-system.svc.cluster.local\n    rewrite name backstage.platform.local envoy-eg.envoy-gateway-system.svc.cluster.local\n'; \
+		  d['data']['Corefile']=cf.replace('ready\n', 'ready\n'+rule) if 'rewrite name keycloak.platform.local' not in cf else cf; \
 		  print(json.dumps(d))" \
 		| kubectl apply -f -
 	kubectl rollout restart deployment coredns -n kube-system
@@ -134,20 +138,6 @@ bootstrap-sync:
 	kubectl wait --for=condition=ready pod \
 		-l gateway.envoyproxy.io/owning-gateway-name=eg \
 		-n envoy-gateway-system --timeout=300s
-	# CoreDNS に *.platform.local の rewrite を追加（Envoy Gateway 起動後）
-	@EG_SVC=$$(kubectl get svc -n envoy-gateway-system \
-		-l gateway.envoyproxy.io/owning-gateway-name=eg \
-		-o jsonpath='{.items[0].metadata.name}') && \
-	kubectl get configmap coredns -n kube-system -o json \
-		| python3 -c "import sys,json; \
-		  d=json.load(sys.stdin); \
-		  cf=d['data']['Corefile']; \
-		  rule='    rewrite name keycloak.platform.local $${EG_SVC}.envoy-gateway-system.svc.cluster.local\\n    rewrite name argocd.platform.local $${EG_SVC}.envoy-gateway-system.svc.cluster.local\\n    rewrite name backstage.platform.local $${EG_SVC}.envoy-gateway-system.svc.cluster.local\\n'; \
-		  d['data']['Corefile']=cf.replace('ready\\n', 'ready\\n'+rule) if 'rewrite name keycloak.platform.local' not in cf else cf; \
-		  print(json.dumps(d))" \
-		| kubectl apply -f -
-	kubectl rollout restart deployment coredns -n kube-system
-	kubectl rollout status deployment coredns -n kube-system
 	# port-forward を切って argocd.platform.local 経由に切り替え
 	lsof -ti:8080 | xargs kill -9 2>/dev/null || true
 	@until curl -sk https://argocd.platform.local/healthz | grep -q ok; do echo "argocd.platform.local 疎通待機中..."; sleep 5; done
