@@ -108,7 +108,7 @@ bootstrap-argocd:
 
 # アプリケーション層の展開（プラットフォーム基盤が安定してから手動実行）
 bootstrap-apps:
-	kubectl apply -f ~/platform-gitops/bootstrap/apps-root.yaml
+	kubectl apply -f $(CURDIR)/apps-root.yaml
 	# goldilocks用ラベル付与
 	kubectl label namespace sample-app goldilocks.fairwinds.com/enabled=true --overwrite
 	@echo "apps-root を適用しました。argocd app list でアプリの sync 状態を確認してください。"
