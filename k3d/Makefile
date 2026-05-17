@@ -24,7 +24,7 @@ cluster-status:
 	kubectl get nodes -o wide
 
 # Cilium を先にインストールしてから CoreDNS を設定する
-bootstrap: cluster-create install-cilium fix-coredns bootstrap-argocd bootstrap-sync
+bootstrap: cluster-create install-cilium fix-coredns bootstrap-argocd bootstrap-sync bootstrap-apps
 
 # CoreDNS に host.k3d.internal と *.platform.local rewrite を追加
 # *.platform.local は固定 SVC 名 envoy-eg へのリライトルール（bootstrap 前に書き込み可能）
@@ -106,7 +106,7 @@ bootstrap-argocd:
 		| kubectl apply -f -
 
 
-# アプリケーション層の展開（プラットフォーム基盤が安定してから手動実行）
+# アプリケーション層の展開（bootstrap-sync 完了後に自動実行）
 bootstrap-apps:
 	kubectl apply -f $(CURDIR)/apps-root.yaml
 	# goldilocks用ラベル付与
