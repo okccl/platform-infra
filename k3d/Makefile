@@ -106,14 +106,6 @@ bootstrap-argocd:
 		| kubectl apply -f -
 
 
-# アプリケーション層の展開（bootstrap-sync 完了後に自動実行）
-bootstrap-apps:
-	argocd app wait user-apps-infra --health --timeout 300
-	kubectl apply -f $(CURDIR)/apps-root.yaml
-	# goldilocks用ラベル付与
-	kubectl label namespace sample-app goldilocks.fairwinds.com/enabled=true --overwrite
-	@echo "apps-root を適用しました。argocd app list でアプリの sync 状態を確認してください。"
-
 bootstrap-sync:
 	# port-forward起動
 	lsof -ti:8080 | xargs kill -9 2>/dev/null || true
@@ -163,3 +155,11 @@ bootstrap-sync:
 	@echo "=== bootstrap 完了 ==="
 	@echo "ArgoCD URL:   https://argocd.platform.local"
 	@echo "Keycloak URL: https://keycloak.platform.local"
+
+# アプリケーション層の展開（bootstrap-sync 完了後に自動実行）
+bootstrap-apps:
+	argocd app wait user-apps-infra --health --timeout 300
+	kubectl apply -f $(CURDIR)/apps-root.yaml
+	# goldilocks用ラベル付与
+	kubectl label namespace sample-app goldilocks.fairwinds.com/enabled=true --overwrite
+	@echo "apps-root を適用しました。argocd app list でアプリの sync 状態を確認してください。"
