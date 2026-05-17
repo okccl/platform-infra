@@ -85,6 +85,13 @@ bootstrap-argocd:
 			--dry-run=client -o yaml \
 		| kubectl label --local -f - app.kubernetes.io/part-of=argocd -o yaml \
 		| kubectl apply -f -
+	# argocd-redis secret を事前作成（redisSecretInit.enabled: false のため）
+	kubectl create secret generic argocd-redis \
+		--from-literal=auth=$$(openssl rand -hex 16) \
+		-n $(ARGOCD_NS) \
+		--dry-run=client -o yaml \
+		| kubectl label --local -f - app.kubernetes.io/part-of=argocd -o yaml \
+		| kubectl apply -f -
 	# ArgoCDインストール
 	# sops Age秘密鍵をargocd namespaceに投入（ksops用）
 	kubectl create secret generic sops-age \
