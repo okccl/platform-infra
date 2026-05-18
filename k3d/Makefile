@@ -23,9 +23,6 @@ cluster-delete:
 cluster-status:
 	kubectl get nodes -o wide
 
-# Cilium を先にインストールしてから CoreDNS を設定する
-bootstrap: cluster-create install-cilium fix-coredns bootstrap-argocd bootstrap-sync bootstrap-apps
-
 bootstrap-start:
 	@date +%s > /tmp/bootstrap_start
 	@echo "Bootstrap 開始: $$(date '+%H:%M:%S')"
