@@ -172,7 +172,11 @@ bootstrap-sync:
 
 # アプリケーション層の展開（bootstrap-sync 完了後に自動実行）
 bootstrap-apps:
-	argocd app wait user-apps-infra --health --timeout 300
+	@echo "user-apps-infra 待機中..."; \
+	until kubectl get application user-apps-infra -n $(ARGOCD_NS) \
+		-o jsonpath='{.status.health.status}' 2>/dev/null | grep -q Healthy; do \
+		sleep 10; \
+	done
 	kubectl apply -f $(CURDIR)/apps-root.yaml
 	# goldilocks用ラベル付与
 	kubectl label namespace sample-app goldilocks.fairwinds.com/enabled=true --overwrite
