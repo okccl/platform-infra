@@ -156,9 +156,12 @@ bootstrap-sync:
 	echo "Password: $$ARGOCD_PASS" && \
 	echo "残り wave の sync を待機中..."
 	# Keycloak が Healthy になるまで待機（argocd CLI に依存しない）
-	kubectl wait --for=condition=ready pod \
+	@echo "Keycloak pod が Ready になるまで待機中..."; \
+	until kubectl wait --for=condition=ready pod \
 		-l app.kubernetes.io/name=keycloak \
-		-n keycloak --timeout=900s
+		-n keycloak --timeout=10s 2>/dev/null; do \
+		sleep 10; \
+	done
 	@echo ""
 	@echo "=== bootstrap 完了 ==="
 	@echo "ArgoCD URL:   https://argocd.platform.local"
