@@ -114,6 +114,8 @@ bootstrap-argocd:
 
 
 bootstrap-sync:
+	@date +%s > /tmp/bootstrap_start
+	@echo "Bootstrap 開始: $$(date '+%H:%M:%S')"
 	# 単一ルート App を apply し、即時リフレッシュをトリガー
 	kubectl apply -f ~/platform-gitops/platform/group-roots/root.yaml
 	@until kubectl get application root -n $(ARGOCD_NS) &>/dev/null; do echo "root 作成待機中..."; sleep 5; done
@@ -140,11 +142,13 @@ bootstrap-sync:
 	done
 	# 一次完了：ArgoCD GUI アクセス可能
 	@ARGOCD_PASS=$$(argocd admin initial-password -n $(ARGOCD_NS) | head -1) && \
+	ELAPSED=$$(( $$(date +%s) - $$(cat /tmp/bootstrap_start) )) && \
 	echo "" && \
 	echo "=== ArgoCD 起動完了 ===" && \
 	echo "URL:      https://argocd.platform.local" && \
 	echo "Username: admin" && \
 	echo "Password: $$ARGOCD_PASS" && \
+	echo "経過時間: $$((ELAPSED / 60))分$$((ELAPSED % 60))秒" && \
 	echo "残り wave の sync を待機中..."
 	# Keycloak が Healthy になるまで待機（argocd CLI に依存しない）
 	@echo "Keycloak pod が Ready になるまで待機中..."; \
@@ -153,10 +157,12 @@ bootstrap-sync:
 		-n keycloak --timeout=10s 2>/dev/null; do \
 		sleep 10; \
 	done
-	@echo ""
-	@echo "=== bootstrap 完了 ==="
-	@echo "ArgoCD URL:   https://argocd.platform.local"
-	@echo "Keycloak URL: https://keycloak.platform.local"
+	@ELAPSED=$$(( $$(date +%s) - $$(cat /tmp/bootstrap_start) )) && \
+	echo "" && \
+	echo "=== bootstrap 完了 ===" && \
+	echo "ArgoCD URL:   https://argocd.platform.local" && \
+	echo "Keycloak URL: https://keycloak.platform.local" && \
+	echo "総経過時間: $$((ELAPSED / 60))分$$((ELAPSED % 60))秒"
 
 # アプリケーション層の展開（bootstrap-sync 完了後に自動実行）
 bootstrap-apps:
