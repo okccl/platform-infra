@@ -118,17 +118,17 @@ bootstrap-sync:
 	@echo "Bootstrap 開始: $$(date '+%H:%M:%S')"
 	# 単一ルート App を apply し、即時リフレッシュをトリガー
 	kubectl apply -f ~/platform-gitops/platform/group-roots/root.yaml
-	@until kubectl get application root -n $(ARGOCD_NS) &>/dev/null; do echo "root 作成待機中..."; sleep 5; done
+	@echo "root App 作成待機中..."; until kubectl get application root -n $(ARGOCD_NS) &>/dev/null; do sleep 5; done
 	kubectl annotate application root -n $(ARGOCD_NS) argocd.argoproj.io/refresh=hard --overwrite
 	# Envoy Gateway Pod が Ready になるまで待機（argocd.platform.local アクセスに必要）
-	@until kubectl get deployment envoy-gateway -n envoy-gateway-system 2>/dev/null; do echo "envoy-gateway 待機中..."; sleep 5; done
+	@echo "envoy-gateway 待機中..."; until kubectl get deployment envoy-gateway -n envoy-gateway-system &>/dev/null; do sleep 5; done
 	kubectl wait --for=condition=available deployment/envoy-gateway \
 		-n envoy-gateway-system --timeout=600s
-	@until kubectl get pod -l gateway.envoyproxy.io/owning-gateway-name=eg -n envoy-gateway-system 2>/dev/null | grep -q eg; do echo "Envoy Gateway Pod 作成待機中..."; sleep 5; done
+	@echo "Envoy Gateway Pod 作成待機中..."; until kubectl get pod -l gateway.envoyproxy.io/owning-gateway-name=eg -n envoy-gateway-system 2>/dev/null | grep -q eg; do sleep 5; done
 	kubectl wait --for=condition=ready pod \
 		-l gateway.envoyproxy.io/owning-gateway-name=eg \
 		-n envoy-gateway-system --timeout=300s
-	@until curl -sk https://argocd.platform.local/healthz | grep -q ok; do echo "argocd.platform.local 疎通待機中..."; sleep 5; done
+	@echo "argocd.platform.local 疎通待機中..."; until curl -sk https://argocd.platform.local/healthz | grep -q ok; do sleep 5; done
 	@ARGOCD_PASS=$$(argocd admin initial-password -n $(ARGOCD_NS) | head -1) && \
 	argocd login argocd.platform.local \
 		--username admin \
@@ -136,9 +136,10 @@ bootstrap-sync:
 		--insecure \
 		--name argocd.platform.local
 	# ArgoCD 自己管理（wave-5）の再起動完了を待機（API server 経由で直接監視）
-	@until kubectl get application argocd -n $(ARGOCD_NS) \
+	@echo "ArgoCD 自己管理 sync 待機中..."; \
+	until kubectl get application argocd -n $(ARGOCD_NS) \
 		-o jsonpath='{.status.health.status}' 2>/dev/null | grep -q Healthy; do \
-		echo "ArgoCD 自己管理 sync 待機中..."; sleep 10; \
+		sleep 10; \
 	done
 	# 一次完了：ArgoCD GUI アクセス可能
 	@ARGOCD_PASS=$$(argocd admin initial-password -n $(ARGOCD_NS) | head -1) && \
@@ -154,7 +155,7 @@ bootstrap-sync:
 	@echo "Keycloak pod が Ready になるまで待機中..."; \
 	until kubectl wait --for=condition=ready pod \
 		-l app.kubernetes.io/name=keycloak \
-		-n keycloak --timeout=10s 2>/dev/null; do \
+		-n keycloak --timeout=10s &>/dev/null; do \
 		sleep 10; \
 	done
 	@ELAPSED=$$(( $$(date +%s) - $$(cat /tmp/bootstrap_start) )) && \
