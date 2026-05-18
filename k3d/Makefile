@@ -154,7 +154,7 @@ bootstrap-sync:
 	# Keycloak が Healthy になるまで待機（argocd CLI に依存しない）
 	@echo "Keycloak pod が Ready になるまで待機中..."; \
 	until kubectl wait --for=condition=ready pod \
-		-l app.kubernetes.io/name=keycloak \
+		-l app.kubernetes.io/name=keycloakx \
 		-n keycloak --timeout=10s &>/dev/null; do \
 		sleep 10; \
 	done
