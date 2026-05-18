@@ -147,6 +147,11 @@ bootstrap-sync:
 		--password $$ARGOCD_PASS \
 		--insecure \
 		--name argocd.platform.local
+	# ArgoCD 自己管理（wave-5）の再起動完了を待機（API server 経由で直接監視）
+	@until kubectl get application argocd -n $(ARGOCD_NS) \
+		-o jsonpath='{.status.health.status}' 2>/dev/null | grep -q Healthy; do \
+		echo "ArgoCD 自己管理 sync 待機中..."; sleep 10; \
+	done
 	# 一次完了：ArgoCD GUI アクセス可能
 	@ARGOCD_PASS=$$(argocd admin initial-password -n $(ARGOCD_NS) | head -1) && \
 	echo "" && \
