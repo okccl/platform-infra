@@ -197,4 +197,6 @@ bootstrap-apps:
 		-o jsonpath='{.status.health.status}' 2>/dev/null | grep -q Healthy; do \
 		sleep 10; \
 	done
-	@echo "=== アプリ起動完了 ==="
+	@ELAPSED=$$(( $$(date +%s) - $$(cat /tmp/bootstrap_start) )) && \
+	echo "=== アプリ起動完了 ===" && \
+	echo "総経過時間: $$((ELAPSED / 60))分$$((ELAPSED % 60))秒"
