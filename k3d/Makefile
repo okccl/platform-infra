@@ -26,6 +26,12 @@ cluster-status:
 # Cilium を先にインストールしてから CoreDNS を設定する
 bootstrap: cluster-create install-cilium fix-coredns bootstrap-argocd bootstrap-sync bootstrap-apps
 
+bootstrap-start:
+	@date +%s > /tmp/bootstrap_start
+	@echo "Bootstrap 開始: $$(date '+%H:%M:%S')"
+
+bootstrap: bootstrap-start cluster-create install-cilium fix-coredns bootstrap-argocd bootstrap-sync bootstrap-apps
+
 # CoreDNS に host.k3d.internal と *.platform.local rewrite を追加
 # *.platform.local は固定 SVC 名 envoy-eg へのリライトルール（bootstrap 前に書き込み可能）
 fix-coredns:
@@ -114,8 +120,7 @@ bootstrap-argocd:
 
 
 bootstrap-sync:
-	@date +%s > /tmp/bootstrap_start
-	@echo "Bootstrap 開始: $$(date '+%H:%M:%S')"
+	@[ -f /tmp/bootstrap_start ] || (date +%s > /tmp/bootstrap_start && echo "Bootstrap 開始: $$(date '+%H:%M:%S')")
 	# 単一ルート App を apply し、即時リフレッシュをトリガー
 	kubectl apply -f ~/platform-gitops/platform/group-roots/root.yaml
 	@echo "root App 作成待機中..."; until kubectl get application root -n $(ARGOCD_NS) >/dev/null 2>&1; do sleep 5; done
