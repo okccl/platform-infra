@@ -180,6 +180,11 @@ bootstrap-apps:
 	kubectl apply -f $(CURDIR)/apps-root.yaml
 	# goldilocks用ラベル付与
 	kubectl label namespace sample-app goldilocks.fairwinds.com/enabled=true --overwrite
+	@echo "root 全 wave 完了待機中..."; \
+	until kubectl get application root -n $(ARGOCD_NS) \
+		-o jsonpath='{.status.health.status}' 2>/dev/null | grep -q Healthy; do \
+		sleep 10; \
+	done
 	@echo "apps-root 待機中..."; \
 	until kubectl get application apps-root -n $(ARGOCD_NS) \
 		-o jsonpath='{.status.health.status}' 2>/dev/null | grep -q Healthy; do \
