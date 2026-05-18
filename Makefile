@@ -52,4 +52,4 @@ cluster-status: ## クラスターノードの状態を表示
 	kubectl get nodes -o wide
 
 generate-dr-manifests: ## GitOps ソースから DR マニフェストを生成（DR 手順の最初のステップ）
-	$(MAKE) -C k3d generate-dr-manifests
+	@python3 k3d/scripts/generate-dr-manifests.py

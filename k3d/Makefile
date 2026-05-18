@@ -5,23 +5,19 @@ SECRETS_DIR     := ~/platform-gitops/secrets/encrypted
 SOPS_AGE_KEY    := $(HOME)/.config/sops/age/keys.txt
 CILIUM_VERSION  := 1.19.3
 
-.PHONY: cluster-create bootstrap bootstrap-start \
-        bootstrap-argocd bootstrap-apps bootstrap-sync fix-coredns install-cilium \
-        generate-dr-manifests
+.PHONY: bootstrap bootstrap-start cluster-create \
+        install-cilium fix-coredns bootstrap-argocd bootstrap-sync bootstrap-apps
 
-generate-dr-manifests: ## GitOps ソースから DR マニフェストを生成（DR 手順の最初のステップ）
-	@python3 scripts/generate-dr-manifests.py
-
-cluster-create:
-	# 既存クラスタが残っている場合は削除してから作成
-	k3d cluster delete $(CLUSTER_NAME) 2>/dev/null || true
-	k3d cluster create --config $(CLUSTER_CONFIG)
+bootstrap: bootstrap-start cluster-create install-cilium fix-coredns bootstrap-argocd bootstrap-sync bootstrap-apps
 
 bootstrap-start:
 	@date +%s > /tmp/bootstrap_start
 	@echo "Bootstrap 開始: $$(date '+%H:%M:%S')"
 
-bootstrap: bootstrap-start cluster-create install-cilium fix-coredns bootstrap-argocd bootstrap-sync bootstrap-apps
+cluster-create:
+	# 既存クラスタが残っている場合は削除してから作成
+	k3d cluster delete $(CLUSTER_NAME) 2>/dev/null || true
+	k3d cluster create --config $(CLUSTER_CONFIG)
 
 # Cilium を Helm で直接インストール（ArgoCD 起動前に CNI が必要なため）
 install-cilium:
@@ -108,7 +104,6 @@ bootstrap-argocd:
 	# GitHub App 認証でリポジトリ接続（credential template を適用）
 	SOPS_AGE_KEY_FILE=$(SOPS_AGE_KEY) sops decrypt $(SECRETS_DIR)/argocd-repo-creds.yaml \
 		| kubectl apply -f -
-
 
 bootstrap-sync:
 	@[ -f /tmp/bootstrap_start ] || (date +%s > /tmp/bootstrap_start && echo "Bootstrap 開始: $$(date '+%H:%M:%S')")
