@@ -165,10 +165,10 @@ bootstrap-sync:
 	done
 	@ELAPSED=$$(( $$(date +%s) - $$(cat /tmp/bootstrap_start) )) && \
 	echo "" && \
-	echo "=== bootstrap 完了 ===" && \
+	echo "=== Keycloak 起動完了 ===" && \
 	echo "ArgoCD URL:   https://argocd.platform.local" && \
 	echo "Keycloak URL: https://keycloak.platform.local" && \
-	echo "総経過時間: $$((ELAPSED / 60))分$$((ELAPSED % 60))秒"
+	echo "経過時間: $$((ELAPSED / 60))分$$((ELAPSED % 60))秒"
 
 # アプリケーション層の展開（bootstrap-sync 完了後に自動実行）
 bootstrap-apps:
@@ -180,4 +180,15 @@ bootstrap-apps:
 	kubectl apply -f $(CURDIR)/apps-root.yaml
 	# goldilocks用ラベル付与
 	kubectl label namespace sample-app goldilocks.fairwinds.com/enabled=true --overwrite
-	@echo "apps-root を適用しました。argocd app list でアプリの sync 状態を確認してください。"
+	@echo "apps-root 待機中..."; \
+	until kubectl get application apps-root -n $(ARGOCD_NS) \
+		-o jsonpath='{.status.health.status}' 2>/dev/null | grep -q Healthy; do \
+		sleep 10; \
+	done
+	@ELAPSED=$$(( $$(date +%s) - $$(cat /tmp/bootstrap_start) )) && \
+	echo "" && \
+	echo "=== bootstrap 完了 ===" && \
+	echo "ArgoCD URL:      https://argocd.platform.local" && \
+	echo "Keycloak URL:    https://keycloak.platform.local" && \
+	echo "Backstage URL:   https://backstage.platform.local" && \
+	echo "総経過時間: $$((ELAPSED / 60))分$$((ELAPSED % 60))秒"
