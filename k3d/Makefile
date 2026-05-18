@@ -5,7 +5,7 @@ SECRETS_DIR     := ~/platform-gitops/secrets/encrypted
 SOPS_AGE_KEY    := $(HOME)/.config/sops/age/keys.txt
 CILIUM_VERSION  := 1.19.3
 
-.PHONY: cluster-create cluster-delete cluster-status bootstrap \
+.PHONY: cluster-create cluster-delete cluster-status bootstrap bootstrap-start \
         bootstrap-argocd bootstrap-apps bootstrap-sync fix-coredns install-cilium \
         generate-dr-manifests
 
@@ -29,25 +29,6 @@ bootstrap-start:
 
 bootstrap: bootstrap-start cluster-create install-cilium fix-coredns bootstrap-argocd bootstrap-sync bootstrap-apps
 
-# CoreDNS に host.k3d.internal と *.platform.local rewrite を追加
-# *.platform.local は固定 SVC 名 envoy-eg へのリライトルール（bootstrap 前に書き込み可能）
-fix-coredns:
-	$(eval K3D_GW := $(shell docker network inspect k3d-$(CLUSTER_NAME) \
-		--format '{{range .IPAM.Config}}{{.Gateway}}{{end}}'))
-	kubectl get configmap coredns -n kube-system -o json \
-		| python3 -c "import sys,json; \
-		  d=json.load(sys.stdin); \
-		  nh=d['data']['NodeHosts']; \
-		  entry='$(K3D_GW) host.k3d.internal\n'; \
-		  d['data']['NodeHosts']=nh if 'host.k3d.internal' in nh else nh+entry; \
-		  cf=d['data']['Corefile']; \
-		  rule='    rewrite name keycloak.platform.local envoy-eg.envoy-gateway-system.svc.cluster.local\n    rewrite name argocd.platform.local envoy-eg.envoy-gateway-system.svc.cluster.local\n    rewrite name backstage.platform.local envoy-eg.envoy-gateway-system.svc.cluster.local\n'; \
-		  d['data']['Corefile']=cf.replace('ready\n', 'ready\n'+rule) if 'rewrite name keycloak.platform.local' not in cf else cf; \
-		  print(json.dumps(d))" \
-		| kubectl apply -f -
-	kubectl rollout restart deployment coredns -n kube-system
-	kubectl rollout status deployment coredns -n kube-system
-
 # Cilium を Helm で直接インストール（ArgoCD 起動前に CNI が必要なため）
 install-cilium:
 	$(eval API_SERVER_IP := $(shell kubectl get endpoints kubernetes \
@@ -68,6 +49,25 @@ install-cilium:
 		--wait --timeout=300s
 	# Cilium が全ノードで Ready になるまで待機
 	kubectl rollout status daemonset/cilium -n kube-system --timeout=300s
+
+# CoreDNS に host.k3d.internal と *.platform.local rewrite を追加
+# *.platform.local は固定 SVC 名 envoy-eg へのリライトルール（bootstrap 前に書き込み可能）
+fix-coredns:
+	$(eval K3D_GW := $(shell docker network inspect k3d-$(CLUSTER_NAME) \
+		--format '{{range .IPAM.Config}}{{.Gateway}}{{end}}'))
+	kubectl get configmap coredns -n kube-system -o json \
+		| python3 -c "import sys,json; \
+		  d=json.load(sys.stdin); \
+		  nh=d['data']['NodeHosts']; \
+		  entry='$(K3D_GW) host.k3d.internal\n'; \
+		  d['data']['NodeHosts']=nh if 'host.k3d.internal' in nh else nh+entry; \
+		  cf=d['data']['Corefile']; \
+		  rule='    rewrite name keycloak.platform.local envoy-eg.envoy-gateway-system.svc.cluster.local\n    rewrite name argocd.platform.local envoy-eg.envoy-gateway-system.svc.cluster.local\n    rewrite name backstage.platform.local envoy-eg.envoy-gateway-system.svc.cluster.local\n'; \
+		  d['data']['Corefile']=cf.replace('ready\n', 'ready\n'+rule) if 'rewrite name keycloak.platform.local' not in cf else cf; \
+		  print(json.dumps(d))" \
+		| kubectl apply -f -
+	kubectl rollout restart deployment coredns -n kube-system
+	kubectl rollout status deployment coredns -n kube-system
 
 # ArgoCDインストール
 bootstrap-argocd:
