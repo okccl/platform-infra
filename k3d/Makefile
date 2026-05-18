@@ -185,15 +185,16 @@ bootstrap-apps:
 		-o jsonpath='{.status.health.status}' 2>/dev/null | grep -q Healthy; do \
 		sleep 10; \
 	done
+	@ELAPSED=$$(( $$(date +%s) - $$(cat /tmp/bootstrap_start) )) && \
+	echo "" && \
+	echo "=== Platform Bootstrap 完了 ===" && \
+	echo "ArgoCD URL:    https://argocd.platform.local" && \
+	echo "Keycloak URL:  https://keycloak.platform.local" && \
+	echo "Backstage URL: https://backstage.platform.local" && \
+	echo "総経過時間: $$((ELAPSED / 60))分$$((ELAPSED % 60))秒"
 	@echo "apps-root 待機中..."; \
 	until kubectl get application apps-root -n $(ARGOCD_NS) \
 		-o jsonpath='{.status.health.status}' 2>/dev/null | grep -q Healthy; do \
 		sleep 10; \
 	done
-	@ELAPSED=$$(( $$(date +%s) - $$(cat /tmp/bootstrap_start) )) && \
-	echo "" && \
-	echo "=== bootstrap 完了 ===" && \
-	echo "ArgoCD URL:      https://argocd.platform.local" && \
-	echo "Keycloak URL:    https://keycloak.platform.local" && \
-	echo "Backstage URL:   https://backstage.platform.local" && \
-	echo "総経過時間: $$((ELAPSED / 60))分$$((ELAPSED % 60))秒"
+	@echo "=== アプリ起動完了 ==="
