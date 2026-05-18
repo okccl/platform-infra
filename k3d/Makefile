@@ -114,22 +114,10 @@ bootstrap-argocd:
 
 
 bootstrap-sync:
-	# port-forward起動
-	lsof -ti:8080 | xargs kill -9 2>/dev/null || true
-	sleep 2
-	kubectl port-forward svc/argocd-server -n $(ARGOCD_NS) 8080:80 &
-	sleep 5
-	# ArgoCD CLIログイン
-	@ARGOCD_PASS=$$(argocd admin initial-password -n $(ARGOCD_NS) | head -1) && \
-	argocd login localhost:8080 \
-		--username admin \
-		--password $$ARGOCD_PASS \
-		--plaintext \
-		--name localhost
-	# 単一ルート App を apply
+	# 単一ルート App を apply し、即時リフレッシュをトリガー
 	kubectl apply -f ~/platform-gitops/platform/group-roots/root.yaml
-	@until argocd app get root &>/dev/null; do echo "root 作成待機中..."; sleep 5; done
-	argocd app sync root --server-side || true
+	@until kubectl get application root -n $(ARGOCD_NS) &>/dev/null; do echo "root 作成待機中..."; sleep 5; done
+	kubectl annotate application root -n $(ARGOCD_NS) argocd.argoproj.io/refresh=hard --overwrite
 	# Envoy Gateway Pod が Ready になるまで待機（argocd.platform.local アクセスに必要）
 	@until kubectl get deployment envoy-gateway -n envoy-gateway-system 2>/dev/null; do echo "envoy-gateway 待機中..."; sleep 5; done
 	kubectl wait --for=condition=available deployment/envoy-gateway \
@@ -138,8 +126,6 @@ bootstrap-sync:
 	kubectl wait --for=condition=ready pod \
 		-l gateway.envoyproxy.io/owning-gateway-name=eg \
 		-n envoy-gateway-system --timeout=300s
-	# port-forward を切って argocd.platform.local 経由に切り替え
-	lsof -ti:8080 | xargs kill -9 2>/dev/null || true
 	@until curl -sk https://argocd.platform.local/healthz | grep -q ok; do echo "argocd.platform.local 疎通待機中..."; sleep 5; done
 	@ARGOCD_PASS=$$(argocd admin initial-password -n $(ARGOCD_NS) | head -1) && \
 	argocd login argocd.platform.local \
