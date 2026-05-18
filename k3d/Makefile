@@ -5,7 +5,7 @@ SECRETS_DIR     := ~/platform-gitops/secrets/encrypted
 SOPS_AGE_KEY    := $(HOME)/.config/sops/age/keys.txt
 CILIUM_VERSION  := 1.19.3
 
-.PHONY: cluster-create cluster-delete cluster-status bootstrap bootstrap-start \
+.PHONY: cluster-create bootstrap bootstrap-start \
         bootstrap-argocd bootstrap-apps bootstrap-sync fix-coredns install-cilium \
         generate-dr-manifests
 
@@ -16,12 +16,6 @@ cluster-create:
 	# 既存クラスタが残っている場合は削除してから作成
 	k3d cluster delete $(CLUSTER_NAME) 2>/dev/null || true
 	k3d cluster create --config $(CLUSTER_CONFIG)
-
-cluster-delete:
-	k3d cluster delete --config $(CLUSTER_CONFIG)
-
-cluster-status:
-	kubectl get nodes -o wide
 
 bootstrap-start:
 	@date +%s > /tmp/bootstrap_start
