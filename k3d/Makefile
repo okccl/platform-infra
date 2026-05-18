@@ -118,10 +118,10 @@ bootstrap-sync:
 	@echo "Bootstrap 開始: $$(date '+%H:%M:%S')"
 	# 単一ルート App を apply し、即時リフレッシュをトリガー
 	kubectl apply -f ~/platform-gitops/platform/group-roots/root.yaml
-	@echo "root App 作成待機中..."; until kubectl get application root -n $(ARGOCD_NS) &>/dev/null; do sleep 5; done
+	@echo "root App 作成待機中..."; until kubectl get application root -n $(ARGOCD_NS) >/dev/null 2>&1; do sleep 5; done
 	kubectl annotate application root -n $(ARGOCD_NS) argocd.argoproj.io/refresh=hard --overwrite
 	# Envoy Gateway Pod が Ready になるまで待機（argocd.platform.local アクセスに必要）
-	@echo "envoy-gateway 待機中..."; until kubectl get deployment envoy-gateway -n envoy-gateway-system &>/dev/null; do sleep 5; done
+	@echo "envoy-gateway 待機中..."; until kubectl get deployment envoy-gateway -n envoy-gateway-system >/dev/null 2>&1; do sleep 5; done
 	kubectl wait --for=condition=available deployment/envoy-gateway \
 		-n envoy-gateway-system --timeout=600s
 	@echo "Envoy Gateway Pod 作成待機中..."; until kubectl get pod -l gateway.envoyproxy.io/owning-gateway-name=eg -n envoy-gateway-system 2>/dev/null | grep -q eg; do sleep 5; done
@@ -155,7 +155,7 @@ bootstrap-sync:
 	@echo "Keycloak pod が Ready になるまで待機中..."; \
 	until kubectl wait --for=condition=ready pod \
 		-l app.kubernetes.io/name=keycloakx \
-		-n keycloak --timeout=10s &>/dev/null; do \
+		-n keycloak --timeout=10s >/dev/null 2>&1; do \
 		sleep 10; \
 	done
 	@ELAPSED=$$(( $$(date +%s) - $$(cat /tmp/bootstrap_start) )) && \
