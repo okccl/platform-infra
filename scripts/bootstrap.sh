@@ -29,15 +29,15 @@ else
 fi
 
 # -----------------------------------------------
-# 3. mise
+# 3. aqua
 # -----------------------------------------------
-if command -v mise &>/dev/null; then
-  skip "mise already installed"
+if command -v aqua &>/dev/null; then
+  skip "aqua already installed"
 else
-  info "Installing mise..."
-  curl -fsSL https://mise.run | sh
-  eval "$(~/.local/bin/mise activate bash)"
-  success "mise installed"
+  info "Installing aqua..."
+  eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+  brew install aqua
+  success "aqua installed"
 fi
 
 # -----------------------------------------------
@@ -73,9 +73,9 @@ if ! grep -q "linuxbrew" "$BASHRC"; then
   success "Added Homebrew to .bashrc"
 fi
 
-if ! grep -q "mise activate" "$BASHRC"; then
-  echo 'eval "$(~/.local/bin/mise activate bash)"' >> "$BASHRC"
-  success "Added mise to .bashrc"
+if ! grep -q "AQUA_GLOBAL_CONFIG" "$BASHRC"; then
+  printf '\n# aqua\nexport PATH="${AQUA_ROOT_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/aquaproj-aqua}/bin:$PATH"\nexport AQUA_GLOBAL_CONFIG="$HOME/platform-infra/aqua.yaml"\n' >> "$BASHRC"
+  success "Added aqua to .bashrc"
 fi
 
 if ! grep -q "direnv hook" "$BASHRC"; then
@@ -89,19 +89,7 @@ if ! grep -q "BASH_SOURCED" "$BASHRC"; then
 fi
 
 # -----------------------------------------------
-# 6. mise trust
-# -----------------------------------------------
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(dirname "$SCRIPT_DIR")"
-
-if mise trust "$REPO_ROOT" &>/dev/null; then
-  success "mise trust applied"
-else
-  skip "mise trust already applied"
-fi
-
-# -----------------------------------------------
-# Done
+# 6. Done
 # -----------------------------------------------
 echo ""
 echo "Bootstrap complete. Next steps:"

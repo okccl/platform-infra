@@ -7,11 +7,11 @@ CLUSTER_NAME := dev
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-bootstrap: ## Set up WSL from scratch (Homebrew, mise, Docker, direnv)
+bootstrap: ## Set up WSL from scratch (Homebrew, aqua, Docker, direnv)
 	@bash scripts/bootstrap.sh
 
-init: ## Install all tools via mise
-	mise install
+init: ## Install all tools via aqua
+	aqua install
 
 check: ## Show versions of all tools
 	@echo "kubectl : $$(kubectl version --client -o json | grep gitVersion | head -1 | tr -d '\" ,')"
