@@ -1,0 +1,19 @@
+---
+# PE チーム共通ツール定義 - source of truth
+# AQUA_GLOBAL_CONFIG=$HOME/platform-infra/aqua.yaml をシェルプロファイルに設定して使用する
+# ツール追加・バージョン変更はこのファイルのみで完結する
+
+registries:
+  - type: standard
+    ref: v4.513.0
+
+packages:
+  - name: kubernetes/kubectl@v1.35.3
+  - name: helm/helm@v3.20.1
+  - name: k3d-io/k3d@v5.8.3
+  - name: argoproj/argo-cd@v3.2.9
+  - name: getsops/sops@v3.12.2
+  - name: FiloSottile/age@v1.3.1
+  - name: argoproj/argo-rollouts@v1.8.3
+  - name: hatoo/oha@v1.14.0
+  - name: cli/cli@v2.87.2
