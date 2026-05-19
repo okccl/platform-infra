@@ -148,6 +148,11 @@ bootstrap-sync:
 		-n keycloak --timeout=10s >/dev/null 2>&1; do \
 		sleep 10; \
 	done
+	@echo "gateway-routes（Wave 16）完了待機中..."; \
+	until kubectl get application gateway-routes -n $(ARGOCD_NS) \
+		-o jsonpath='{.status.health.status}' 2>/dev/null | grep -q Healthy; do \
+		sleep 10; \
+	done
 	@ELAPSED=$$(( $$(date +%s) - $$(cat /tmp/bootstrap_start) )) && \
 	echo "" && \
 	echo "=== Keycloak 起動完了 ===" && \
