@@ -17,7 +17,7 @@ import sys
 PLATFORM_GITOPS = os.path.expanduser("~/platform-gitops")
 APPS_GITOPS = os.path.expanduser("~/apps-gitops")
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-OUTPUT_DIR = os.path.join(SCRIPT_DIR, "..", "dr")
+OUTPUT_DIR = os.path.join(SCRIPT_DIR, "..", "k3d", "dr")
 
 TEMPLATE = """\
 # DR マニフェスト: {name}

@@ -54,7 +54,7 @@ cluster-status: ## クラスターノードの状態を表示
 	kubectl get nodes -o wide
 
 generate-dr-manifests: ## GitOps ソースから DR マニフェストを生成（DR 手順の最初のステップ）
-	@python3 k3d/scripts/generate-dr-manifests.py
+	@python3 scripts/generate-dr-manifests.py
 
 backup-to-gcs: ## MinIO の cnpg-backup バケットを GCS に同期
-	@bash k3d/scripts/backup-to-gcs.sh
+	@bash scripts/backup-to-gcs.sh
