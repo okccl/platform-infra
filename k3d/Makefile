@@ -1,3 +1,6 @@
+# k3d クラスターの bootstrap フローを管理する Makefile。
+# `make bootstrap` はクラスターを作り直す破壊的操作のため、ルート Makefile から分離している。
+# 実行は必ず `cd k3d` してから行うこと。
 CLUSTER_CONFIG  := cluster.yaml
 CLUSTER_NAME    := dev
 ARGOCD_NS       := argocd

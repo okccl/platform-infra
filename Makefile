@@ -1,3 +1,5 @@
+# WSL レベルの操作を管理する Makefile。
+# k3d クラスターの bootstrap は破壊的操作のため、誤実行防止として k3d/Makefile に分離している。
 .DEFAULT_GOAL := help
 
 CLUSTER_NAME := dev
