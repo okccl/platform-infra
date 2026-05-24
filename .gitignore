@@ -1,0 +1,2 @@
+logs/*.log
+k3d/dr/*.yaml
