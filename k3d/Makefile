@@ -7,17 +7,13 @@ CILIUM_VERSION  := 1.19.3
 
 .PHONY: bootstrap bootstrap-start cluster-create \
         install-cilium fix-coredns bootstrap-argocd bootstrap-sync bootstrap-apps \
-        backup-to-gcs generate-dr-manifests
+        backup-to-gcs
 
 bootstrap: bootstrap-start cluster-create install-cilium fix-coredns bootstrap-argocd bootstrap-sync bootstrap-apps
 
 # MinIO の cnpg-backup バケットを GCS に同期
 backup-to-gcs:
 	bash $(CURDIR)/scripts/backup-to-gcs.sh
-
-# DR マニフェストを GitOps ソースから動的生成する（k3d/dr/<cluster-name>-recovery.yaml）
-generate-dr-manifests:
-	python3 $(CURDIR)/scripts/generate-dr-manifests.py
 
 bootstrap-start:
 	@date +%s > /tmp/bootstrap_start
