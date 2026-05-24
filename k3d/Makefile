@@ -6,9 +6,14 @@ SOPS_AGE_KEY    := $(HOME)/.config/sops/age/keys.txt
 CILIUM_VERSION  := 1.19.3
 
 .PHONY: bootstrap bootstrap-start cluster-create \
-        install-cilium fix-coredns bootstrap-argocd bootstrap-sync bootstrap-apps
+        install-cilium fix-coredns bootstrap-argocd bootstrap-sync bootstrap-apps \
+        backup-to-gcs
 
 bootstrap: bootstrap-start cluster-create install-cilium fix-coredns bootstrap-argocd bootstrap-sync bootstrap-apps
+
+# MinIO の cnpg-backup バケットを GCS に同期
+backup-to-gcs:
+	bash $(CURDIR)/scripts/backup-to-gcs.sh
 
 bootstrap-start:
 	@date +%s > /tmp/bootstrap_start
