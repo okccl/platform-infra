@@ -2,7 +2,7 @@
 
 CLUSTER_NAME := dev
 
-.PHONY: help bootstrap init check cluster-start cluster-stop cluster-restart cluster-delete cluster-status generate-dr-manifests
+.PHONY: help bootstrap init check cluster-start cluster-stop cluster-restart cluster-delete cluster-status generate-dr-manifests backup-to-gcs
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -53,3 +53,6 @@ cluster-status: ## クラスターノードの状態を表示
 
 generate-dr-manifests: ## GitOps ソースから DR マニフェストを生成（DR 手順の最初のステップ）
 	@python3 k3d/scripts/generate-dr-manifests.py
+
+backup-to-gcs: ## MinIO の cnpg-backup バケットを GCS に同期
+	@bash k3d/scripts/backup-to-gcs.sh
