@@ -47,6 +47,7 @@ spec:
       barmanObjectStore:
         endpointURL: "http://host.k3d.internal:9000"
         destinationPath: "{destination_path}"
+        serverName: "{name}"
         s3Credentials:
           accessKeyId:
             name: {secret_name}
