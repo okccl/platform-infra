@@ -5,7 +5,7 @@ DR マニフェストを GitOps ソースから生成する。
 
 スキャン対象:
   - ~/platform-gitops/platform/**/*.yaml  (kind: Cluster + barmanObjectStore があるもの)
-  - ~/apps-gitops/apps/*/values.yaml      (db.backup.enabled: true があるもの)
+  - ~/apps-gitops/apps/*/*/values.yaml     (db.backup.enabled: true があるもの)
 
 出力先: k3d/dr/<cluster-name>-recovery.yaml
 """
@@ -103,7 +103,7 @@ for path in sorted(glob.glob(f"{PLATFORM_GITOPS}/platform/**/*.yaml", recursive=
     })
 
 # apps-gitops: db.backup.enabled=true の values.yaml を自動検出
-for values_path in sorted(glob.glob(f"{APPS_GITOPS}/apps/*/values.yaml")):
+for values_path in sorted(glob.glob(f"{APPS_GITOPS}/apps/*/*/values.yaml")):
     try:
         vals = load_yaml(values_path)
     except Exception:
