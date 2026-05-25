@@ -13,7 +13,6 @@ DR リストアのために GitOps リポジトリを直接書き換える。
 
 【出力】
   - 上記ファイルを直接書き換え（DR 後は git checkout -- <ファイル> で元に戻す）
-  - k3d/dr/<cluster-name>-recovery.yaml にも参照用コピーを生成（platform-gitops クラスターのみ）
 
 【DR 手順】
   1. このスクリプトを実行（make generate-dr-manifests）
@@ -36,8 +35,6 @@ import yaml
 
 PLATFORM_GITOPS = os.path.expanduser("~/platform-gitops")
 APPS_GITOPS = os.path.expanduser("~/apps-gitops")
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-OUTPUT_DIR = os.path.join(SCRIPT_DIR, "..", "k3d", "dr")
 
 MINIO_ENDPOINT = "http://host.k3d.internal:9000"
 
@@ -186,8 +183,6 @@ if not platform_clusters and not apps_clusters:
 
 # ── 書き換えフェーズ ───────────────────────────────────────────────────
 
-os.makedirs(OUTPUT_DIR, exist_ok=True)
-
 changed_files = []
 
 print(f"\n【platform-gitops】{len(platform_clusters)} クラスターを recovery に書き換えます...")
@@ -201,15 +196,9 @@ for cl in platform_clusters:
     )
     content = header + dump_yaml(new_doc)
 
-    # gitops ソースファイルを上書き
     with open(cl["source_file"], "w") as f:
         f.write(content)
     changed_files.append(("platform-gitops", cl["source_file"]))
-
-    # k3d/dr/ に参照用コピーを生成
-    ref_path = os.path.join(OUTPUT_DIR, f"{cl['name']}-recovery.yaml")
-    with open(ref_path, "w") as f:
-        f.write(content)
 
     print(f"  ✓ {cl['source_file']}")
 
