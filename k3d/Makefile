@@ -166,8 +166,11 @@ bootstrap-sync:
 # アプリケーション層の展開（bootstrap-sync 完了後に自動実行）
 bootstrap-apps:
 	@echo "user-apps-infra 待機中..."; \
-	until kubectl get application user-apps-infra -n $(ARGOCD_NS) \
-		-o jsonpath='{.status.health.status}' 2>/dev/null | grep -q Healthy; do \
+	until \
+		kubectl get applications -n $(ARGOCD_NS) --no-headers 2>/dev/null \
+			| grep "^user-apps-infra-" | grep -q . \
+		&& ! kubectl get applications -n $(ARGOCD_NS) --no-headers 2>/dev/null \
+			| grep "^user-apps-infra-" | grep -qv Healthy; do \
 		sleep 10; \
 	done
 	kubectl apply -f $(CURDIR)/apps-root.yaml
