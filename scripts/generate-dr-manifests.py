@@ -12,7 +12,7 @@ DR リストアのために GitOps リポジトリを直接書き換える。
   - ~/apps-gitops/apps/*/*/values.yaml     (db.backup.enabled: true があるもの)
 
 【出力】
-  - 上記ファイルを直接書き換え（DR 後は git checkout -- <ファイル> で元に戻す）
+  - 上記ファイルを直接書き換え（DR 完了後も gitops は recovery のまま維持する）
 
 【DR 手順】
   1. このスクリプトを実行（make generate-dr-manifests）
@@ -23,15 +23,22 @@ DR リストアのために GitOps リポジトリを直接書き換える。
   5. 対象 PVC を削除（kubectl delete pvc -n <ns> -l cnpg.io/cluster=<name>）
   6. ArgoCD が recovery bootstrap でクラスターを自動作成する
   7. "Cluster in healthy state" を待機
-  8. DR 後: 各 gitops リポジトリで git checkout -- <ファイル> して commit + push
+
+【DR 完了後の gitops について】
+  gitops は recovery bootstrap のまま維持する（git checkout -- は不要）。
+  spec.bootstrap は一度きりの初期化イベントであり、running クラスターの動作には影響しない。
+  WAL アーカイブは backup.serverName が空の新規パスを指しているため正常に継続される。
 """
 import copy
 import glob
 import io
 import os
 import sys
+from datetime import date
 
 import yaml
+
+DATE_SUFFIX = date.today().strftime("%Y%m%d")
 
 PLATFORM_GITOPS = os.path.expanduser("~/platform-gitops")
 APPS_GITOPS = os.path.expanduser("~/apps-gitops")
@@ -54,79 +61,154 @@ def dump_yaml(data):
 def make_platform_recovery_doc(doc):
     """
     platform-gitops の CNPG Cluster doc を recovery bootstrap に書き換えた dict を返す。
-    externalClusters を追加し、spec.backup（WAL アーカイブ設定）は保持する。
+    externalClusters を追加し、spec.backup.barmanObjectStore.serverName を新規パスに変更する。
+
+    serverName の扱い:
+      - externalClusters.serverName: 旧バックアップ参照先
+        現行の backup.serverName（未設定時はクラスター名）を引き継ぐ
+      - backup.serverName: 新規 WAL 書き込み先（空パス）
+        {cluster_name}-{YYYYMMDD} に変更し、barman-cloud-check-wal-archive を通過させる
     """
     new_doc = copy.deepcopy(doc)
     bmos = doc["spec"]["backup"]["barmanObjectStore"]
     cluster_name = doc["metadata"]["name"]
+
+    # 現行の serverName を読む（未設定時はクラスター名がデフォルト）
+    old_server_name = bmos.get("serverName", cluster_name)
+    new_server_name = f"{cluster_name}-{DATE_SUFFIX}"
 
     # spec.bootstrap を recovery に変更
     new_doc["spec"]["bootstrap"] = {
         "recovery": {"source": "minio-backup"}
     }
 
-    # spec.externalClusters を追加
+    # spec.externalClusters を追加（旧バックアップを参照）
     new_doc["spec"]["externalClusters"] = [{
         "name": "minio-backup",
         "barmanObjectStore": {
             "endpointURL": MINIO_ENDPOINT,
             "destinationPath": bmos["destinationPath"],
-            "serverName": cluster_name,
+            "serverName": old_server_name,
             "s3Credentials": copy.deepcopy(bmos["s3Credentials"]),
             "wal": {"compression": "gzip"},
             "data": {"compression": "gzip"},
         }
     }]
 
+    # spec.backup.barmanObjectStore.serverName を新規パス（空）に変更
+    new_doc["spec"]["backup"]["barmanObjectStore"]["serverName"] = new_server_name
+
     return new_doc
+
+
+def _set_serverName_in_block(text, block_name, server_name):
+    """
+    db.<block_name> ブロック内の serverName を追加または置換する（テキスト操作）。
+    block_name は 'backup' または 'recovery'。インデントは 4 スペース固定。
+    """
+    lines = text.splitlines(keepends=True)
+    in_db = False
+    in_block = False
+
+    for i, line in enumerate(lines):
+        stripped = line.lstrip()
+        indent = len(line) - len(stripped)
+
+        if not in_db:
+            if line.startswith("db:"):
+                in_db = True
+        elif not in_block:
+            if indent == 0 and stripped.strip():
+                return "".join(lines)  # db: ブロックを抜けた（block が見つからなかった）
+            if indent == 2 and stripped.rstrip() == f"{block_name}:":
+                in_block = True
+        else:
+            # db.<block_name> ブロック内
+            if indent == 4 and stripped.startswith("serverName:"):
+                # 既存 serverName を置換
+                lines[i] = f"    serverName: \"{server_name}\"\n"
+                return "".join(lines)
+            if indent <= 2 and stripped.strip():
+                # ブロック終端（次の peer キーまたは top-level キー）の直前に挿入
+                lines.insert(i, f"    serverName: \"{server_name}\"\n")
+                return "".join(lines)
+
+    # ファイル末尾までブロック内だった場合（ブロックがファイル最後）
+    if in_block:
+        lines.append(f"    serverName: \"{server_name}\"\n")
+    return "".join(lines)
 
 
 def insert_recovery_into_values_file(values_path, vals):
     """
-    apps-gitops の values.yaml に db.recovery ブロックをテキスト挿入する。
+    apps-gitops の values.yaml を DR 用に書き換える（テキスト操作）。
     YAML の再シリアライズはせず元のフォーマット・コメントを保持する。
-    db.recovery 以外のフィールドは変更しない。
+
+    処理内容:
+      - db.recovery が未設定 → recovery ブロックを追加（serverName 含む）
+      - db.recovery が設定済み → recovery.serverName を追加/更新
+      - db.backup.serverName を新規パスに追加/更新
+
+    serverName の扱い:
+      - recovery.serverName: 旧バックアップ参照先
+        現行の backup.serverName（未設定時は db.name）を引き継ぐ
+      - backup.serverName: 新規 WAL 書き込み先（空パス）
+        {db.name}-{YYYYMMDD} に変更し、barman-cloud-check-wal-archive を通過させる
     """
     with open(values_path) as f:
         original = f.read()
 
     db = vals.get("db", {})
     backup = db.get("backup", {})
+    recovery = db.get("recovery", {})
+    db_name = db["name"]
     endpoint_url = backup.get("endpointURL", MINIO_ENDPOINT)
     bucket_name = backup.get("bucketName", "cnpg-backup")
     secret_name = backup.get("secretName", "minio-backup-secret")
 
-    recovery_block = (
-        "  recovery:\n"
-        "    enabled: true\n"
-        "    source: minio-backup\n"
-        f"    endpointURL: \"{endpoint_url}\"\n"
-        f"    bucketName: \"{bucket_name}\"\n"
-        f"    secretName: \"{secret_name}\"\n"
-    )
+    # serverName の決定
+    old_server_name = backup.get("serverName") or db_name   # 旧バックアップ参照先
+    new_server_name = f"{db_name}-{DATE_SUFFIX}"             # 新規書き込み先
 
-    # db: セクションの直後（次の top-level キーの行）に挿入
-    lines = original.splitlines(keepends=True)
-    db_section_started = False
-    insert_at = None
+    result = original
 
-    for i, line in enumerate(lines):
-        if line.startswith("db:"):
-            db_section_started = True
-            continue
-        if db_section_started and line.strip() and not line[0].isspace() and not line.startswith("#"):
-            # 次の top-level キー（例: env:）の直前が挿入ポイント
-            insert_at = i
-            break
+    if not recovery.get("enabled"):
+        # recovery ブロックが未設定 → 追加
+        recovery_block = (
+            "  recovery:\n"
+            "    enabled: true\n"
+            "    source: minio-backup\n"
+            f"    endpointURL: \"{endpoint_url}\"\n"
+            f"    bucketName: \"{bucket_name}\"\n"
+            f"    secretName: \"{secret_name}\"\n"
+            f"    serverName: \"{old_server_name}\"\n"
+        )
 
-    if insert_at is None and db_section_started:
-        # db: がファイル最後のセクション → 末尾に追加
-        insert_at = len(lines)
+        lines = result.splitlines(keepends=True)
+        db_section_started = False
+        insert_at = None
 
-    if insert_at is None:
-        result = original + "\n" + recovery_block
+        for i, line in enumerate(lines):
+            if line.startswith("db:"):
+                db_section_started = True
+                continue
+            if db_section_started and line.strip() and not line[0].isspace() and not line.startswith("#"):
+                insert_at = i
+                break
+
+        if insert_at is None and db_section_started:
+            insert_at = len(lines)
+
+        if insert_at is None:
+            result = result + "\n" + recovery_block
+        else:
+            result = "".join(lines[:insert_at]) + recovery_block + "".join(lines[insert_at:])
     else:
-        result = "".join(lines[:insert_at]) + recovery_block + "".join(lines[insert_at:])
+        # recovery ブロックが設定済み → serverName を追加/更新
+        result = _set_serverName_in_block(result, "recovery", old_server_name)
+
+    # db.backup.serverName を新規パスに追加/更新
+    result = _set_serverName_in_block(result, "backup", new_server_name)
 
     with open(values_path, "w") as f:
         f.write(result)
@@ -190,8 +272,7 @@ for cl in platform_clusters:
     new_doc = make_platform_recovery_doc(cl["original_doc"])
     header = (
         f"# DR マニフェスト: {cl['name']}\n"
-        f"# generate-dr-manifests で生成。DR 完了後は以下で元に戻すこと:\n"
-        f"#   cd ~/platform-gitops && git checkout -- {os.path.relpath(cl['source_file'], PLATFORM_GITOPS)}\n"
+        f"# generate-dr-manifests で生成（{DATE_SUFFIX}）。gitops は recovery のまま維持する。\n"
         f"---\n"
     )
     content = header + dump_yaml(new_doc)
@@ -229,17 +310,14 @@ print("""
 
 3. 対象クラスターを削除する（ArgoCD が recovery bootstrap で自動再作成する）:
      kubectl delete cluster <cluster-name> -n <namespace>
-     kubectl delete pvc -n <namespace> -l cnpg.io/cluster=<cluster-name>
+     kubectl delete pvc -n <namespace> -l cnpg.io/cluster=<cluster-name>  # シナリオ A のみ
 
 4. "Cluster in healthy state" を待機する:
      kubectl get cluster <cluster-name> -n <namespace> -w
 
-5. DR 完了後、gitops を元の initdb に戻す:
-     cd ~/platform-gitops && git checkout -- . && git add -A && git commit -m "dr: restore initdb bootstrap" && git push
-     cd ~/apps-gitops && git checkout -- . && git add -A && git commit -m "dr: restore initdb bootstrap" && git push
-
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-注意: ArgoCD は ignoreDifferences で spec.bootstrap の差分を無視するため、
-      Step 5 後も running クラスターの bootstrap は変わらない（自然に保たれる）。
+注意: DR 完了後、gitops は recovery bootstrap のまま維持する（git checkout -- は不要）。
+      spec.bootstrap は一度きりの初期化イベントで、running クラスターの動作には影響しない。
+      backup.serverName が空の新規パスを指しているため、WAL アーカイブは正常に継続される。
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """)
