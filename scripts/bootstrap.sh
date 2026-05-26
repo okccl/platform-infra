@@ -8,6 +8,9 @@ info()    { echo "[INFO]  $*"; }
 success() { echo "[OK]    $*"; }
 skip()    { echo "[SKIP]  $*"; }
 
+AQUA_BIN="${XDG_DATA_HOME:-$HOME/.local/share}/aquaproj-aqua/bin"
+AQUA_GLOBAL_CONFIG="$HOME/platform-infra/aqua.yaml"
+
 # -----------------------------------------------
 # 1. System packages
 # -----------------------------------------------
@@ -41,30 +44,92 @@ else
 fi
 
 # -----------------------------------------------
-# 4. Docker Engine
+# 4. aqua-managed tools（Docker CLI/daemon 含む）
+#    バージョンの source of truth は aqua.yaml
 # -----------------------------------------------
-if command -v docker &>/dev/null; then
-  skip "Docker already installed"
+info "Installing aqua-managed tools (kubectl, helm, k3d, docker, ...)..."
+export PATH="${AQUA_BIN}:$PATH"
+export AQUA_GLOBAL_CONFIG="${AQUA_GLOBAL_CONFIG}"
+aqua install
+success "Tools installed via aqua"
+
+# -----------------------------------------------
+# 5. Docker daemon setup
+#    aqua が提供する dockerd を systemd サービスとして起動する。
+#    containerd.io（dockerd の依存）は Docker 公式 APT リポジトリから取得する。
+#    docker-ce 本体は aqua 管理のため APT からはインストールしない。
+# -----------------------------------------------
+if systemctl is-active --quiet docker 2>/dev/null; then
+  skip "Docker daemon already running"
 else
-  info "Installing Docker Engine..."
-  sudo install -m 0755 -d /etc/apt/keyrings
-  sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
-    -o /etc/apt/keyrings/docker.asc
-  sudo chmod a+r /etc/apt/keyrings/docker.asc
-  echo \
-    "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] \
-    https://download.docker.com/linux/ubuntu \
-    $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
-    sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-  sudo apt-get update -qq
-  sudo apt-get install -y -qq \
-    docker-ce docker-ce-cli containerd.io docker-buildx-plugin
+  info "Setting up Docker daemon..."
+
+  # containerd.io（dockerd の依存。aqua 管理外のためここだけ APT）
+  if ! dpkg -l containerd.io &>/dev/null 2>&1; then
+    info "Installing containerd.io..."
+    sudo install -m 0755 -d /etc/apt/keyrings
+    sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+      -o /etc/apt/keyrings/docker.asc
+    sudo chmod a+r /etc/apt/keyrings/docker.asc
+    echo \
+      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] \
+      https://download.docker.com/linux/ubuntu \
+      $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+      sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+    sudo apt-get update -qq
+    sudo apt-get install -y -qq containerd.io
+  fi
+
+  # docker グループ
+  sudo groupadd -f docker
   sudo usermod -aG docker "$USER"
-  success "Docker Engine installed (re-login required for group to take effect)"
+
+  # aqua の dockerd 実体パス（version-specific。service ファイルに埋め込む）
+  DOCKERD_PATH="$(aqua which dockerd)"
+
+  # systemd ユニット（aqua の dockerd を使用）
+  sudo tee /etc/systemd/system/docker.service > /dev/null <<EOF
+[Unit]
+Description=Docker Application Container Engine
+Documentation=https://docs.docker.com
+After=network-online.target containerd.service
+Requires=docker.socket containerd.service
+
+[Service]
+Type=notify
+ExecStart=${DOCKERD_PATH} -H fd:// --containerd=/run/containerd/containerd.sock
+ExecReload=/bin/kill -s HUP \$MAINPID
+TimeoutStartSec=0
+RestartSec=2
+Restart=always
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  sudo tee /etc/systemd/system/docker.socket > /dev/null <<EOF
+[Unit]
+Description=Docker Socket for the API
+
+[Socket]
+ListenStream=/var/run/docker.sock
+SocketMode=0660
+SocketUser=root
+SocketGroup=docker
+
+[Install]
+WantedBy=sockets.target
+EOF
+
+  sudo systemctl daemon-reload
+  sudo systemctl enable --now docker
+  success "Docker daemon started (re-login required for group to take effect)"
 fi
 
 # -----------------------------------------------
-# 5. .bashrc integrations
+# 6. .bashrc integrations
 # -----------------------------------------------
 BASHRC="$HOME/.bashrc"
 
@@ -89,7 +154,7 @@ if ! grep -q "BASH_SOURCED" "$BASHRC"; then
 fi
 
 # -----------------------------------------------
-# 6. Done
+# 7. Done
 # -----------------------------------------------
 echo ""
 echo "Bootstrap complete. Next steps:"
