@@ -20,3 +20,4 @@ packages:
   - name: twistedpair/google-cloud-sdk@562.0.0
   - name: rclone/rclone@v1.74.2
   - name: docker/cli@v29.4.0
+  - name: jqlang/jq@jq-1.8.1
