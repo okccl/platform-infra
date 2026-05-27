@@ -33,6 +33,7 @@ import copy
 import glob
 import io
 import os
+import subprocess
 import sys
 from datetime import date
 
@@ -44,6 +45,23 @@ PLATFORM_GITOPS = os.path.expanduser("~/platform-gitops")
 APPS_GITOPS = os.path.expanduser("~/apps-gitops")
 
 MINIO_ENDPOINT = "http://host.k3d.internal:9000"
+
+
+def get_cluster_namespace(cluster_name):
+    """kubectl で CNPG Cluster の namespace を取得する。取得できない場合は None を返す。"""
+    try:
+        result = subprocess.run(
+            ["kubectl", "get", "cluster", "-A", "--no-headers",
+             "-o", "custom-columns=NS:.metadata.namespace,NAME:.metadata.name"],
+            capture_output=True, text=True, timeout=10
+        )
+        for line in result.stdout.splitlines():
+            parts = line.split()
+            if len(parts) >= 2 and parts[1] == cluster_name:
+                return parts[0]
+    except Exception:
+        pass
+    return None
 
 
 def load_yaml(path):
@@ -267,6 +285,7 @@ for path in sorted(glob.glob(f"{PLATFORM_GITOPS}/platform/**/*.yaml", recursive=
 
     platform_clusters.append({
         "name": doc["metadata"]["name"],
+        "namespace": doc["metadata"].get("namespace", ""),
         "source_file": path,
         "original_doc": doc,
     })
@@ -324,7 +343,42 @@ for cl in apps_clusters:
 
 # ── 次の手順を表示 ────────────────────────────────────────────────────
 
-print("""
+# kubectl delete コマンドを各クラスター分生成する
+delete_lines = []
+for cl in platform_clusters:
+    ns = cl["namespace"]
+    name = cl["name"]
+    delete_lines.append(f"  kubectl delete cluster {name} -n {ns}")
+for cl in apps_clusters:
+    name = cl["name"]
+    ns = get_cluster_namespace(name)
+    if ns:
+        delete_lines.append(f"  kubectl delete cluster {name} -n {ns}")
+    else:
+        delete_lines.append(
+            f"  kubectl delete cluster {name} -n <namespace>"
+            f"  # ※ kubectl get cluster -A で namespace を確認"
+        )
+
+delete_block = "\n".join(delete_lines) if delete_lines else "  （対象クラスターなし）"
+
+# シナリオ A 向け: kubectl delete pvc コマンド
+pvc_lines = []
+for cl in platform_clusters:
+    ns = cl["namespace"]
+    name = cl["name"]
+    pvc_lines.append(f"  kubectl delete pvc -n {ns} -l cnpg.io/cluster={name}")
+for cl in apps_clusters:
+    name = cl["name"]
+    ns = get_cluster_namespace(name)
+    if ns:
+        pvc_lines.append(f"  kubectl delete pvc -n {ns} -l cnpg.io/cluster={name}")
+    else:
+        pvc_lines.append(f"  kubectl delete pvc -n <namespace> -l cnpg.io/cluster={name}")
+
+pvc_block = "\n".join(pvc_lines) if pvc_lines else "  （対象クラスターなし）"
+
+print(f"""
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 【次の手順】
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -340,12 +394,17 @@ print("""
      cd ~/apps-gitops
      git add -A && git commit -m "dr: activate recovery bootstrap" && git push
 
-3. 対象クラスターを削除する（ArgoCD が recovery bootstrap で自動再作成する）:
-     kubectl delete cluster <cluster-name> -n <namespace>
-     kubectl delete pvc -n <namespace> -l cnpg.io/cluster=<cluster-name>  # シナリオ A のみ
+3. 全対象クラスターを削除する（ArgoCD が recovery bootstrap で自動再作成する）:
+     ※ ArgoCD の ignoreDifferences により bootstrap/externalClusters は既存クラスターに
+        適用されないため、必ず全クラスターを削除して再作成させること。
+
+{delete_block}
+
+     # シナリオ A（PVC 破損）のみ: 破損 PVC も合わせて削除する
+{pvc_block}
 
 4. "Cluster in healthy state" を待機する:
-     kubectl get cluster <cluster-name> -n <namespace> -w
+     kubectl get cluster -A -w
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 注意: DR 完了後、gitops は recovery bootstrap のまま維持する（git checkout -- は不要）。
