@@ -16,7 +16,13 @@ AQUA_GLOBAL_CONFIG="$HOME/platform-infra/aqua.yaml"
 # -----------------------------------------------
 info "Updating apt packages..."
 sudo apt-get update -qq
-sudo apt-get install -y -qq git curl make unzip ca-certificates direnv
+sudo apt-get install -y -qq git curl make unzip ca-certificates direnv iptables
+
+# WSL2 では iptables-legacy を使用する（Docker daemon の要件）
+if command -v update-alternatives &>/dev/null && [ -f /usr/sbin/iptables-legacy ]; then
+  sudo update-alternatives --set iptables /usr/sbin/iptables-legacy
+  sudo update-alternatives --set ip6tables /usr/sbin/ip6tables-legacy
+fi
 
 # -----------------------------------------------
 # 2. Homebrew
@@ -49,8 +55,9 @@ fi
 # -----------------------------------------------
 info "Installing aqua-managed tools (kubectl, helm, k3d, docker, ...)..."
 export PATH="${AQUA_BIN}:$PATH"
-export AQUA_GLOBAL_CONFIG="${AQUA_GLOBAL_CONFIG}"
-aqua install
+# aqua install は aqua.yaml が存在するディレクトリで実行する必要がある
+# （AQUA_GLOBAL_CONFIG 環境変数は aqua v2.x では bin シンボリックリンク作成に使われない）
+(cd "$(dirname "${AQUA_GLOBAL_CONFIG}")" && aqua install)
 success "Tools installed via aqua"
 
 # -----------------------------------------------
@@ -84,8 +91,11 @@ else
   sudo groupadd -f docker
   sudo usermod -aG docker "$USER"
 
-  # aqua の dockerd 実体パス（version-specific。service ファイルに埋め込む）
+  # aqua の dockerd は遅延インストールのため、service ファイルに埋め込む前に
+  # docker CLI を一度実行して実体バイナリをダウンロードさせる
+  "${AQUA_BIN}/docker" version >/dev/null 2>&1 || true
   DOCKERD_PATH="$(aqua which dockerd)"
+  DOCKER_PROXY_PATH="$(aqua which docker-proxy)"
 
   # systemd ユニット（aqua の dockerd を使用）
   sudo tee /etc/systemd/system/docker.service > /dev/null <<EOF
@@ -97,7 +107,7 @@ Requires=docker.socket containerd.service
 
 [Service]
 Type=notify
-ExecStart=${DOCKERD_PATH} -H fd:// --containerd=/run/containerd/containerd.sock
+ExecStart=${DOCKERD_PATH} -H fd:// --containerd=/run/containerd/containerd.sock --userland-proxy-path=${DOCKER_PROXY_PATH}
 ExecReload=/bin/kill -s HUP \$MAINPID
 TimeoutStartSec=0
 RestartSec=2
@@ -188,12 +198,16 @@ fi
 # 9. minio-external コンテナの作成
 #    Docker グループはスクリプト内では有効にならないため sudo -E を使用
 # -----------------------------------------------
-if sudo -E docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q '^minio-external$'; then
+# sudo は secure_path で PATH を上書きするため AQUA_BIN が見えない。
+# 実体バイナリの絶対パスを使って sudo を呼ぶ。
+DOCKER_REAL="$(aqua which docker)"
+
+if sudo "${DOCKER_REAL}" ps -a --format '{{.Names}}' 2>/dev/null | grep -q '^minio-external$'; then
   skip "minio-external は既存"
 else
   info "minio-external コンテナを作成中..."
   mkdir -p "$HOME/minio-data"
-  sudo -E docker run -d \
+  sudo "${DOCKER_REAL}" run -d \
     --name minio-external \
     --restart unless-stopped \
     -p 9000:9000 -p 9001:9001 \
@@ -203,9 +217,9 @@ else
     quay.io/minio/minio:latest \
     server /data --console-address ":9001"
   sleep 3
-  sudo -E docker exec minio-external /usr/bin/mc alias set local \
+  sudo "${DOCKER_REAL}" exec minio-external /usr/bin/mc alias set local \
     http://localhost:9000 minioadmin minioadmin123
-  sudo -E docker exec minio-external /usr/bin/mc mb local/cnpg-backup
+  sudo "${DOCKER_REAL}" exec minio-external /usr/bin/mc mb local/cnpg-backup
   success "minio-external 作成完了"
 fi
 
