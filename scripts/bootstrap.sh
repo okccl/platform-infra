@@ -154,16 +154,69 @@ if ! grep -q "BASH_SOURCED" "$BASHRC"; then
 fi
 
 # -----------------------------------------------
-# 7. Done
+# 7. リポジトリのクローン
+#    platform-infra は実行前にクローン済みのためスキップ
+# -----------------------------------------------
+repos=(
+  "platform-gitops" "apps-gitops" "platform-docs"
+  "platform-charts" "sample-backend" "sample-frontend"
+  "backstage" "internal"
+)
+for repo in "${repos[@]}"; do
+  if [ -d "$HOME/$repo" ]; then
+    skip "$repo は既存"
+  else
+    git clone "git@github.com:okccl/$repo.git" "$HOME/$repo"
+    success "$repo クローン完了"
+  fi
+done
+
+# -----------------------------------------------
+# 8. Age 秘密鍵の配置
+# -----------------------------------------------
+AGE_KEY_FILE="${HOME}/.config/sops/age/keys.txt"
+if [ -f "$AGE_KEY_FILE" ]; then
+  skip "Age 秘密鍵は既存"
+else
+  echo ""
+  echo "[INPUT] Age 秘密鍵をパスワードマネージャーからコピーして貼り付け、Ctrl+D で確定してください。"
+  mkdir -p "$(dirname "$AGE_KEY_FILE")"
+  cat > "$AGE_KEY_FILE"
+  chmod 600 "$AGE_KEY_FILE"
+  success "Age 秘密鍵を配置しました"
+fi
+
+# -----------------------------------------------
+# 9. minio-external コンテナの作成
+#    Docker グループはスクリプト内では有効にならないため sudo -E を使用
+# -----------------------------------------------
+if sudo -E docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q '^minio-external$'; then
+  skip "minio-external は既存"
+else
+  info "minio-external コンテナを作成中..."
+  mkdir -p "$HOME/minio-data"
+  sudo -E docker run -d \
+    --name minio-external \
+    --restart unless-stopped \
+    -p 9000:9000 -p 9001:9001 \
+    -v "$HOME/minio-data:/data" \
+    -e MINIO_ROOT_USER=minioadmin \
+    -e MINIO_ROOT_PASSWORD=minioadmin123 \
+    quay.io/minio/minio:latest \
+    server /data --console-address ":9001"
+  sleep 3
+  sudo -E docker exec minio-external /usr/bin/mc alias set local \
+    http://localhost:9000 minioadmin minioadmin123
+  sudo -E docker exec minio-external /usr/bin/mc mb local/cnpg-backup
+  success "minio-external 作成完了"
+fi
+
+# -----------------------------------------------
+# 10. Done
 # -----------------------------------------------
 echo ""
 echo "Bootstrap complete. Next steps:"
 echo ""
-echo "  0. Set git identity (if not yet configured):"
-echo '     git config --global user.email "your@email.com"'
-echo '     git config --global user.name "Your Name"'
-echo ""
 echo "  1. source ~/.bashrc"
-echo "  2. cd ~/platform-infra"
-echo "  3. make init"
-echo "  4. make check"
+echo "  2. WSL 全損リストアの場合: ~/platform-docs/docs/runbook/dr-restore.md シナリオ C の続きを実行"
+echo "     通常セットアップの場合: cd ~/platform-infra/k3d && make bootstrap"
