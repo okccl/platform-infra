@@ -1,0 +1,10 @@
+# クローン対象リポジトリ一覧（platform-infra は bootstrap.sh 実行前にクローン済みのため除く）
+# bootstrap.sh 実行前に内容が最新であることを確認すること
+platform-gitops
+apps-gitops
+platform-docs
+platform-charts
+sample-backend
+sample-frontend
+backstage
+internal

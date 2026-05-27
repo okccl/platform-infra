@@ -155,13 +155,11 @@ fi
 
 # -----------------------------------------------
 # 7. リポジトリのクローン
-#    platform-infra は実行前にクローン済みのためスキップ
+#    対象リポジトリは scripts/repos.txt で管理。
+#    実行前にリポジトリの追加・削除・名前変更がないか確認すること。
 # -----------------------------------------------
-repos=(
-  "platform-gitops" "apps-gitops" "platform-docs"
-  "platform-charts" "sample-backend" "sample-frontend"
-  "backstage" "internal"
-)
+REPOS_FILE="$(dirname "$0")/repos.txt"
+mapfile -t repos < <(grep -v '^\s*#' "$REPOS_FILE" | grep -v '^\s*$')
 for repo in "${repos[@]}"; do
   if [ -d "$HOME/$repo" ]; then
     skip "$repo は既存"
