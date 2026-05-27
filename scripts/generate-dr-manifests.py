@@ -68,14 +68,36 @@ def make_platform_recovery_doc(doc):
         現行の backup.serverName（未設定時はクラスター名）を引き継ぐ
       - backup.serverName: 新規 WAL 書き込み先（空パス）
         {cluster_name}-{YYYYMMDD} に変更し、barman-cloud-check-wal-archive を通過させる
+
+    同日2回実行ガード:
+      backup.serverName が既に今日付け（== new_server_name）の場合、
+      既存の externalClusters.serverName をリストア元として引き継ぐ。
+      （同日再実行では backup.serverName を old として使うと両方が同値になり
+        空パスをリストア元に指定してしまうバグを防ぐ）
     """
     new_doc = copy.deepcopy(doc)
     bmos = doc["spec"]["backup"]["barmanObjectStore"]
     cluster_name = doc["metadata"]["name"]
 
     # 現行の serverName を読む（未設定時はクラスター名がデフォルト）
-    old_server_name = bmos.get("serverName", cluster_name)
+    current_backup_server_name = bmos.get("serverName") or cluster_name
     new_server_name = f"{cluster_name}-{DATE_SUFFIX}"
+
+    # 同日2回実行ガード:
+    # current_backup_server_name == new_server_name のとき、
+    # 既存の externalClusters.serverName をリストア元として引き継ぐ
+    if current_backup_server_name == new_server_name:
+        existing_ext = (doc.get("spec") or {}).get("externalClusters") or []
+        if existing_ext:
+            recovery_source_name = (
+                existing_ext[0].get("barmanObjectStore") or {}
+            ).get("serverName") or cluster_name
+            print(f"  [WARN] {cluster_name}: backup.serverName が既に今日付けのため、"
+                  f"既存の externalClusters.serverName ({recovery_source_name}) を引き継ぎます")
+        else:
+            recovery_source_name = cluster_name
+    else:
+        recovery_source_name = current_backup_server_name
 
     # spec.bootstrap を recovery に変更
     new_doc["spec"]["bootstrap"] = {
@@ -88,7 +110,7 @@ def make_platform_recovery_doc(doc):
         "barmanObjectStore": {
             "endpointURL": MINIO_ENDPOINT,
             "destinationPath": bmos["destinationPath"],
-            "serverName": old_server_name,
+            "serverName": recovery_source_name,
             "s3Credentials": copy.deepcopy(bmos["s3Credentials"]),
             "wal": {"compression": "gzip"},
             "data": {"compression": "gzip"},
@@ -167,8 +189,18 @@ def insert_recovery_into_values_file(values_path, vals):
     secret_name = backup.get("secretName", "minio-backup-secret")
 
     # serverName の決定
-    old_server_name = backup.get("serverName") or db_name   # 旧バックアップ参照先
+    current_backup_server_name = backup.get("serverName") or db_name
     new_server_name = f"{db_name}-{DATE_SUFFIX}"             # 新規書き込み先
+
+    # 同日2回実行ガード: backup.serverName が既に今日付けの場合は
+    # 既存の recovery.serverName をリストア元として引き継ぐ
+    if current_backup_server_name == new_server_name:
+        old_server_name = recovery.get("serverName") or db_name
+        if old_server_name != db_name:
+            print(f"  [WARN] {db_name}: backup.serverName が既に今日付けのため、"
+                  f"既存の recovery.serverName ({old_server_name}) を引き継ぎます")
+    else:
+        old_server_name = current_backup_server_name
 
     result = original
 
