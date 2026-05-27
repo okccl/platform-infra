@@ -4,7 +4,7 @@
 
 CLUSTER_NAME := dev
 
-.PHONY: help bootstrap init check cluster-start cluster-stop cluster-restart cluster-delete cluster-status generate-dr-manifests backup-to-gcs
+.PHONY: help bootstrap init check cluster-start cluster-stop cluster-restart cluster-delete cluster-status generate-dr-manifests backup-to-gcs restore-from-gcs
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -58,3 +58,6 @@ generate-dr-manifests: ## GitOps ソースから DR マニフェストを生成�
 
 backup-to-gcs: ## MinIO の cnpg-backup バケットを GCS に同期
 	@bash scripts/backup-to-gcs.sh
+
+restore-from-gcs: ## GCS から MinIO へバックアップを復元（DR シナリオ C Step 3）
+	@bash scripts/restore-from-gcs.sh
