@@ -96,6 +96,7 @@ else
   "${AQUA_BIN}/docker" version >/dev/null 2>&1 || true
   DOCKERD_PATH="$(aqua which dockerd)"
   DOCKER_PROXY_PATH="$(aqua which docker-proxy)"
+  DOCKER_INIT_PATH="$(aqua which docker-init)"
 
   # systemd ユニット（aqua の dockerd を使用）
   sudo tee /etc/systemd/system/docker.service > /dev/null <<EOF
@@ -107,7 +108,7 @@ Requires=docker.socket containerd.service
 
 [Service]
 Type=notify
-ExecStart=${DOCKERD_PATH} -H fd:// --containerd=/run/containerd/containerd.sock --userland-proxy-path=${DOCKER_PROXY_PATH}
+ExecStart=${DOCKERD_PATH} -H fd:// --containerd=/run/containerd/containerd.sock --userland-proxy-path=${DOCKER_PROXY_PATH} --init-path=${DOCKER_INIT_PATH}
 ExecReload=/bin/kill -s HUP \$MAINPID
 TimeoutStartSec=0
 RestartSec=2
